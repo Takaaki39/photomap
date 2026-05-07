@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PhotoMap icon">
+  <rect width="512" height="512" rx="96" fill="#0f172a"/>
+  <circle cx="256" cy="220" r="112" fill="#22c55e"/>
+  <path d="M256 438c-69-92-104-147-104-202a104 104 0 1 1 208 0c0 55-35 110-104 202Z" fill="#38bdf8"/>
+  <circle cx="256" cy="242" r="40" fill="#0f172a"/>
+</svg>
