@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getServerAuthSession } from "@/lib/auth";
 import { createSupabaseAdminClient, supabase } from "@/lib/supabase";
 import { createSignedPhotoUrl } from "@/lib/photoUrl";
 
@@ -36,6 +37,12 @@ function parsePointFromWkt(wkt: string | null) {
 }
 
 export async function GET(request: Request) {
+  // 未ログインユーザーにピン情報を返さない（プライベートサイト）
+  const session = await getServerAuthSession();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const bounds = parseBounds(searchParams.get("bounds"));
   const zoom = Number(searchParams.get("zoom") ?? 5);
