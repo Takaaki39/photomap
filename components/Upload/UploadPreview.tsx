@@ -21,8 +21,8 @@ export function UploadPreview({
       </div>
 
       <div className="space-y-2">
-        <h2 className="text-headline-lg font-headline-lg">Review your memory</h2>
-        <p className="text-body-lg font-body-lg text-on-surface-variant">写真のメタデータ（位置情報など）を確認してから投稿できます。</p>
+        <h2 className="text-headline-lg font-headline-lg">投稿内容を自動入力しました</h2>
+        <p className="text-body-lg font-body-lg text-on-surface-variant">位置情報と地名は自動で設定されます。</p>
         {fileLabel ? <div className="text-label-sm font-label-sm text-outline">{fileLabel}</div> : null}
       </div>
     </div>

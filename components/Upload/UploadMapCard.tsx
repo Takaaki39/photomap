@@ -14,12 +14,12 @@ export function UploadMapCard({
   return (
     <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-base shadow-md">
       <div className="mb-4 overflow-hidden rounded-lg">
-        <div className="h-48 w-full">
+        <div className="h-48 w-full pointer-events-none">
           <PinPicker value={manualLocation ?? (gps ? { lat: gps.lat, lng: gps.lng } : null)} onChange={onChange} />
         </div>
       </div>
       <div className="px-2 pb-2">
-        <div className="text-label-sm font-label-sm text-primary uppercase">Identified Location</div>
+        <div className="text-label-sm font-label-sm text-primary uppercase">位置情報</div>
         <div className="text-body-md font-body-md font-bold">
           {gps
             ? `EXIF（${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}）`

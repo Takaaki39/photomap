@@ -10,6 +10,20 @@ import type { Database } from "@/types";
 
 const PROTECTED_PATHS = ["/upload", "/me", "/settings"] as const;
 
+function getAllowedEmails(): string[] {
+  return (process.env.ALLOWED_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isEmailAllowed(email: string | null | undefined): boolean {
+  const allowed = getAllowedEmails();
+  if (allowed.length === 0) return true;
+  if (!email) return false;
+  return allowed.includes(email.toLowerCase());
+}
+
 function normalizeSupabaseUrl(raw: string) {
   try {
     const u = new URL(raw);
@@ -106,6 +120,7 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
+        if (!isEmailAllowed(credentials.email)) return null;
 
         const supabase = getSupabaseAnonClient();
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -154,6 +169,12 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async signIn({ user }) {
+      // メールアドレスのallowlistによる制限（ALLOWED_EMAILS 未設定なら全許可）
+      if (!isEmailAllowed(user.email)) {
+        console.warn(`[auth] sign-in blocked: ${user.email ?? "(no email)"}`);
+        return false;
+      }
+
       // プロフィール同期の失敗でログイン全体を失敗させない（環境変数ミス等の影響を局所化）
       try {
         await ensurePublicUser(user);

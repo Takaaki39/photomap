@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
       "default-src 'self'",
       "base-uri 'self'",
       "frame-ancestors 'self'",
-      "img-src 'self' data: blob: https://*.supabase.co https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org https://*.openstreetmap.org https://*.googleusercontent.com https://*.gstatic.com https://*.googlesyndication.com",
+      "img-src 'self' data: blob: https://*.supabase.co https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.jp https://*.openstreetmap.jp https://*.tile.openstreetmap.org https://*.openstreetmap.org https://*.googleusercontent.com https://*.gstatic.com https://*.googlesyndication.com",
       "style-src 'self' 'unsafe-inline'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://pagead2.googlesyndication.com https://www.googletagservices.com https://tpc.googlesyndication.com",
       "connect-src 'self' https://*.supabase.co https://raw.githubusercontent.com https://cdn.jsdelivr.net https://nominatim.openstreetmap.org https://*.openstreetmap.org https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net",

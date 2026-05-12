@@ -85,6 +85,17 @@ export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {
     return photos.filter((p) => p.id.toLowerCase().includes(keyword) || p.created_at.toLowerCase().includes(keyword));
   }, [photos, q]);
 
+  const deletePhoto = async (photoId: string) => {
+    if (!confirm("この写真を削除しますか？（クラウド上の画像も削除されます）")) return;
+    const res = await fetch(`/api/photos/${photoId}`, { method: "DELETE" });
+    if (!res.ok) {
+      await res.text();
+      return;
+    }
+    setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+    setTotal((prev) => (typeof prev === "number" ? Math.max(0, prev - 1) : prev));
+  };
+
   return (
     <div className="bg-background text-on-surface min-h-screen pb-24">
       <TopNav query={q} onQueryChange={setQ} />
@@ -99,7 +110,14 @@ export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {
 
         {derivedError ? <p className="mb-md text-body-md font-body-md text-error">{derivedError}</p> : null}
 
-        <GalleryGrid photos={filtered} spot={spot} selectMode={false} selected={new Set()} onToggleSelected={() => {}} />
+        <GalleryGrid
+          photos={filtered}
+          spot={spot}
+          selectMode={false}
+          selected={new Set()}
+          onToggleSelected={() => {}}
+          onDeletePhoto={deletePhoto}
+        />
       </main>
 
       <BottomNav active="gallery" galleryHref={`/gallery/${clusterId}`} />

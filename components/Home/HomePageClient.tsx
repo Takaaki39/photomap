@@ -124,7 +124,7 @@ export function HomePageClient() {
   }, []);
 
   return (
-    <div className="relative w-full h-svh overflow-hidden bg-background text-on-surface">
+    <div className="home-outlined-typo relative w-full h-svh overflow-hidden bg-background text-on-surface">
       <TopNav query={query} onQueryChange={setQuery} />
 
       <main className="relative h-svh w-full">

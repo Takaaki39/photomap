@@ -119,6 +119,8 @@ export async function GET(request: Request) {
       };
     })
     .filter((spot): spot is NonNullable<typeof spot> => Boolean(spot))
+    // Hide spots with no photos (prevents "empty" pins after deletions).
+    .filter((spot) => spot.photo_count > 0)
     .map(async (spot) => {
       const signedThumb = await createSignedPhotoUrl(spot.thumbnail_url, 3600);
       const signedOriginal = await createSignedPhotoUrl(spot.storage_url, 3600);

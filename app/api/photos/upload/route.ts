@@ -82,6 +82,8 @@ export async function POST(request: Request) {
     const clientLat = typeof clientLatRaw === "string" ? Number(clientLatRaw) : null;
     const clientLng = typeof clientLngRaw === "string" ? Number(clientLngRaw) : null;
 
+    const requireExifGps = String(formData.get("require_exif_gps") ?? "false") === "true";
+
     const clientGps =
       typeof clientLat === "number" &&
       typeof clientLng === "number" &&
@@ -90,16 +92,21 @@ export async function POST(request: Request) {
         ? { lat: clientLat, lng: clientLng }
         : null;
 
-    const exifGps = clientGps ? null : await extractGpsFromExif(file);
-    const gps =
-      clientGps ??
-      exifGps ??
-      (typeof manualLat === "number" &&
-      typeof manualLng === "number" &&
-      Number.isFinite(manualLat) &&
-      Number.isFinite(manualLng)
-        ? { lat: manualLat, lng: manualLng }
-        : null);
+    const exifGps = await extractGpsFromExif(file);
+    if (requireExifGps && !exifGps) {
+      return NextResponse.json({ error: "位置情報（EXIF）が無い写真はアップロードできません。" }, { status: 422 });
+    }
+
+    const gps = requireExifGps
+      ? exifGps
+      : (clientGps ??
+        exifGps ??
+        (typeof manualLat === "number" &&
+        typeof manualLng === "number" &&
+        Number.isFinite(manualLat) &&
+        Number.isFinite(manualLng)
+          ? { lat: manualLat, lng: manualLng }
+          : null));
 
     if (!gps) {
       return NextResponse.json({ error: "手動で場所を入力してください" }, { status: 422 });

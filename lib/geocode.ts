@@ -1,7 +1,7 @@
 import "server-only";
 
 export type ReverseGeocodeResult = {
-  name: string;
+  name: string; // POI name (e.g. park/shrine/station)
   address: string;
 } | null;
 
@@ -40,9 +40,44 @@ export async function reverseGeocode(lat: number, lng: number): Promise<ReverseG
   const data = (await response.json()) as {
     name?: string;
     display_name?: string;
+    namedetails?: { name?: string } | null;
+    address?: Record<string, unknown> | null;
   };
 
-  const name = data.name ?? data.display_name;
+  // Prefer a POI-like name over a full address.
+  const addr = (data.address ?? {}) as Record<string, unknown>;
+  const candidateKeys = [
+    // Nominatim often provides these for POIs.
+    "attraction",
+    "tourism",
+    "leisure",
+    "amenity",
+    "building",
+    "historic",
+    "natural",
+    "shop",
+    "railway",
+    "aeroway",
+    "man_made",
+    // Fallbacks that are still place-ish.
+    "neighbourhood",
+    "suburb",
+    "quarter",
+    "village",
+    "town",
+    "city",
+  ] as const;
+
+  const poiFromAddress = candidateKeys
+    .map((k) => addr[k])
+    .find((v): v is string => typeof v === "string" && v.trim().length > 0);
+
+  const name =
+    (typeof data.name === "string" && data.name.trim() ? data.name.trim() : null) ??
+    (typeof data.namedetails?.name === "string" && data.namedetails.name.trim() ? data.namedetails.name.trim() : null) ??
+    (poiFromAddress ? poiFromAddress.trim() : null) ??
+    (typeof data.display_name === "string" && data.display_name.trim() ? data.display_name.split(",")[0].trim() : null);
+
   if (!name || !data.display_name) return null;
 
   return {

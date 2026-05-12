@@ -71,6 +71,22 @@ export function GalleryClient({ spotId }: { spotId: string }) {
     });
   };
 
+  const deletePhoto = async (photoId: string) => {
+    if (!confirm("この写真を削除しますか？（クラウド上の画像も削除されます）")) return;
+    const res = await fetch(`/api/photos/${photoId}`, { method: "DELETE" });
+    if (!res.ok) {
+      const text = await res.text();
+      setError(text || "削除に失敗しました。");
+      return;
+    }
+    setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.delete(photoId);
+      return next;
+    });
+  };
+
   return (
     <div className="bg-background text-on-surface min-h-screen pb-24">
       <TopNav query={q} onQueryChange={setQ} />
@@ -96,6 +112,7 @@ export function GalleryClient({ spotId }: { spotId: string }) {
           selectMode={selectMode && isUuid}
           selected={selected}
           onToggleSelected={toggleSelected}
+          onDeletePhoto={deletePhoto}
         />
       </main>
 

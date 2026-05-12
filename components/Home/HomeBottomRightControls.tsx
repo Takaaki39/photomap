@@ -13,7 +13,7 @@ export function HomeBottomRightControls({
         type="button"
         aria-label="Current location"
         onClick={onLocate}
-        className="w-12 h-12 bg-surface/95 backdrop-blur shadow-lg rounded-full flex items-center justify-center text-primary active:scale-90 transition-transform"
+        className="w-12 h-12 bg-surface-container-lowest/95 dark:bg-surface-container/95 backdrop-blur-md shadow-lg rounded-full flex items-center justify-center text-primary active:scale-90 transition-transform border border-outline-variant/60 dark:border-outline/40"
       >
         <span className="material-symbols-outlined">my_location</span>
       </button>

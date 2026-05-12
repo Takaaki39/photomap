@@ -9,7 +9,7 @@ export function HomeZoomControl({
 }) {
   return (
     <div className="absolute top-24 right-4 md:top-24 md:right-8 z-20 flex flex-col gap-2">
-      <div className="bg-surface/95 backdrop-blur shadow-lg rounded-xl p-1 flex flex-col overflow-hidden">
+      <div className="bg-surface-container-lowest/95 dark:bg-surface-container/95 backdrop-blur-md shadow-lg rounded-xl p-1 flex flex-col overflow-hidden border border-outline-variant/60 dark:border-outline/40">
         <button
           type="button"
           onClick={() => onSelectZoom(14)}
@@ -17,7 +17,7 @@ export function HomeZoomControl({
             active === "city" ? "bg-primary text-on-primary font-bold" : "hover:bg-primary/10 text-on-surface-variant"
           }`}
         >
-          City
+          市
         </button>
         <button
           type="button"
@@ -26,7 +26,7 @@ export function HomeZoomControl({
             active === "prefecture" ? "bg-primary text-on-primary font-bold" : "hover:bg-primary/10 text-on-surface-variant"
           }`}
         >
-          Prefecture
+          県
         </button>
         <button
           type="button"
@@ -35,7 +35,7 @@ export function HomeZoomControl({
             active === "region" ? "bg-primary text-on-primary font-bold" : "hover:bg-primary/10 text-on-surface-variant"
           }`}
         >
-          Region
+          地方
         </button>
         <button
           type="button"
@@ -44,7 +44,7 @@ export function HomeZoomControl({
             active === "country" ? "bg-primary text-on-primary font-bold" : "hover:bg-primary/10 text-on-surface-variant"
           }`}
         >
-          Country
+          国
         </button>
         <button
           type="button"
@@ -53,7 +53,7 @@ export function HomeZoomControl({
             active === "world" ? "bg-primary text-on-primary font-bold" : "hover:bg-primary/10 text-on-surface-variant"
           }`}
         >
-          World
+          世界
         </button>
       </div>
     </div>

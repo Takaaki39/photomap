@@ -2,12 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { PickedLocation } from "@/components/Map/PinPicker";
 import { extractGpsFromExif } from "@/lib/exif";
 import { UploadDonePanel } from "@/components/Upload/UploadDonePanel";
 import { UploadFileDrop } from "@/components/Upload/UploadFileDrop";
 import { UploadMapCard } from "@/components/Upload/UploadMapCard";
-import { UploadMetaForm } from "@/components/Upload/UploadMetaForm";
 import { UploadPreview } from "@/components/Upload/UploadPreview";
 import { TopNav } from "@/components/Nav/TopNav";
 import { BottomNav } from "@/components/Nav/BottomNav";
@@ -42,28 +40,28 @@ export default function UploadPage() {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const [stage, setStage] = useState<Stage>("select");
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [activeIndex, setActiveIndex] = useState(0);
   const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
-  const [manualLocation, setManualLocation] = useState<PickedLocation | null>(null);
-  const [manualMode, setManualMode] = useState(false);
-  const [isPublic, setIsPublic] = useState(true);
+  const [isPublic] = useState(true);
   const [placeName, setPlaceName] = useState("");
-  const [dateTimeText, setDateTimeText] = useState("");
-  const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ spot_id: string; photo_id: string; lat?: number; lng?: number } | null>(null);
+  const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
+  const [uploadedCount, setUploadedCount] = useState(0);
 
   const canProceed = useMemo(() => {
-    if (!file) return false;
+    if (files.length === 0) return false;
     if (gps) return true;
-    if (manualMode && manualLocation) return true;
     return false;
-  }, [file, gps, manualMode, manualLocation]);
+  }, [files.length, gps]);
+
+  const activeFile = useMemo(() => files[activeIndex] ?? null, [files, activeIndex]);
 
   const previewUrl = useMemo(() => {
-    if (!file) return null;
-    return URL.createObjectURL(file);
-  }, [file]);
+    if (!activeFile) return null;
+    return URL.createObjectURL(activeFile);
+  }, [activeFile]);
 
   useEffect(() => {
     if (!previewUrl) return;
@@ -80,47 +78,114 @@ export default function UploadPage() {
     return null;
   };
 
-  const onPickFile = async (f: File) => {
+  const resetAll = () => {
+    setFiles([]);
+    setActiveIndex(0);
+    setGps(null);
+    setStage("select");
+    setResult(null);
+    setUploadingIndex(null);
+    setUploadedCount(0);
+  };
+
+  const onPickFiles = async (picked: File[]) => {
     setError(null);
-    const v = validateFile(f);
-    if (v) {
-      setFile(null);
-      setGps(null);
-      setManualLocation(null);
-      setManualMode(false);
-      setStage("select");
-      setError(v);
+    if (picked.length === 0) return;
+    for (const f of picked) {
+      const v = validateFile(f);
+      if (v) {
+        resetAll();
+        setError(v);
+        return;
+      }
+    }
+
+    // EXIF(GPS)が無い写真はアップロード対象から除外する
+    const withExif: File[] = [];
+    const withoutExif: string[] = [];
+    for (const f of picked) {
+      try {
+        const g = await extractGpsFromExif(f);
+        if (g) withExif.push(f);
+        else withoutExif.push(f.name);
+      } catch {
+        withoutExif.push(f.name);
+      }
+    }
+
+    if (withExif.length === 0) {
+      resetAll();
+      setError("位置情報（EXIF）がある写真が見つかりませんでした。位置情報付きの写真を選択してください。");
       return;
     }
 
-    setFile(f);
+    setFiles(withExif);
+    setActiveIndex(0);
     setStage("review");
-    setManualMode(false);
-    setManualLocation(null);
-    setDateTimeText(formatLocalDateTime(f));
+    void formatLocalDateTime(withExif[0] ?? null);
 
+    // まとめて投稿の基準位置は「1枚目のEXIF(GPS)」
     try {
-      const g = await extractGpsFromExif(f);
+      const g = await extractGpsFromExif(withExif[0] as File);
       setGps(g);
-      if (!g) {
-        setManualMode(true);
-      }
     } catch {
       setGps(null);
-      setManualMode(true);
+    }
+
+    if (withoutExif.length > 0) {
+      setError(`位置情報（EXIF）が無いので除外しました: ${withoutExif.slice(0, 5).join("、")}${withoutExif.length > 5 ? ` ほか${withoutExif.length - 5}件` : ""}`);
     }
   };
+
+  useEffect(() => {
+    if (files.length === 0) return;
+    if (gps) return;
+    if (stage === "uploading" || stage === "done") return;
+
+    // この画面は「EXIF(GPS)必須」なので、端末GPS/IPフォールバックは使わない
+    // （メタ情報なし写真が通ってしまうのを防ぐため）
+  }, [files.length, gps, stage]);
+
+  const lastAutoFillKeyRef = useRef<string>("");
+  useEffect(() => {
+    const chosen = gps;
+    if (!chosen) return;
+
+    const key = `${chosen.lat.toFixed(6)},${chosen.lng.toFixed(6)}`;
+    if (key === lastAutoFillKeyRef.current) return;
+
+    // Don't overwrite user-entered text (only fill when empty, or when last value was auto-filled).
+    const canOverwrite = placeName.trim().length === 0 || placeName === lastAutoFillKeyRef.current;
+    if (!canOverwrite) {
+      lastAutoFillKeyRef.current = key;
+      return;
+    }
+
+    lastAutoFillKeyRef.current = key;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/geocode/reverse?lat=${encodeURIComponent(String(chosen.lat))}&lng=${encodeURIComponent(String(chosen.lng))}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const d = (await res.json()) as { result?: { name?: string } | null };
+        const name = typeof d.result?.name === "string" ? d.result.name.trim() : "";
+        if (!name) return;
+        setPlaceName((prev) => (prev.trim().length === 0 ? name : prev));
+      } catch {
+        // ignore
+      }
+    })();
+  }, [gps, placeName]);
 
   const onDrop: React.DragEventHandler<HTMLDivElement> = async (e) => {
     e.preventDefault();
-    const dropped = e.dataTransfer.files?.[0];
-    if (dropped) {
-      await onPickFile(dropped);
-    }
+    const list = Array.from(e.dataTransfer.files ?? []);
+    if (list.length > 0) await onPickFiles(list);
   };
 
   const onSubmit = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     if (!canProceed) {
       setError("位置情報が不足しています。GPS付き画像か、手動ピンを選択してください。");
       return;
@@ -128,63 +193,68 @@ export default function UploadPage() {
 
     setStage("uploading");
     setError(null);
+    setUploadedCount(0);
 
-    const fd = new FormData();
-    fd.set("file", file);
-    fd.set("is_public", String(isPublic));
-    fd.set("place_name", placeName);
+    const chosen = gps;
 
-    const chosen = gps ?? (manualMode ? manualLocation : null);
-    if (chosen) {
-      fd.set("client_lat", String(chosen.lat));
-      fd.set("client_lng", String(chosen.lng));
-    }
+    for (let i = 0; i < files.length; i += 1) {
+      const file = files[i] as File;
+      setUploadingIndex(i);
 
-    const res = await fetch("/api/photos/upload", { method: "POST", body: fd });
-
-    const raw = await res.text();
-    const payload = (() => {
-      if (!raw) return {} as Record<string, unknown>;
-      try {
-        return JSON.parse(raw) as Record<string, unknown>;
-      } catch {
-        return { error: raw } as Record<string, unknown>;
+      const fd = new FormData();
+      fd.set("file", file);
+      fd.set("is_public", String(isPublic));
+      fd.set("place_name", placeName);
+      fd.set("require_exif_gps", "true");
+      if (chosen) {
+        fd.set("client_lat", String(chosen.lat));
+        fd.set("client_lng", String(chosen.lng));
       }
-    })();
 
-    const errorMessage =
-      (typeof payload.error === "string" && payload.error) ||
-      (typeof payload.message === "string" && payload.message) ||
-      (raw ? "アップロードに失敗しました。" : "アップロードに失敗しました（サーバー応答が空です）。");
+      const res = await fetch("/api/photos/upload", { method: "POST", body: fd });
+      const raw = await res.text();
+      const payload = (() => {
+        if (!raw) return {} as Record<string, unknown>;
+        try {
+          return JSON.parse(raw) as Record<string, unknown>;
+        } catch {
+          return { error: raw } as Record<string, unknown>;
+        }
+      })();
 
-    const spotId = typeof payload.spot_id === "string" ? payload.spot_id : "";
-    const photoId = typeof payload.photo_id === "string" ? payload.photo_id : "";
-    const resultLat = typeof payload.lat === "number" ? payload.lat : Number(payload.lat);
-    const resultLng = typeof payload.lng === "number" ? payload.lng : Number(payload.lng);
-    if (!res.ok) {
-      if (res.status === 422) {
-        setManualMode(true);
+      const errorMessage =
+        (typeof payload.error === "string" && payload.error) ||
+        (typeof payload.message === "string" && payload.message) ||
+        (raw ? "アップロードに失敗しました。" : "アップロードに失敗しました（サーバー応答が空です）。");
+
+      if (!res.ok) {
         setStage("review");
-        setError(errorMessage || "GPS情報がありません。手動で場所を入力してください。");
+        setUploadingIndex(null);
+        setError(`${i + 1}枚目で失敗: ${errorMessage}`);
         return;
       }
-      setStage("review");
-      setError(errorMessage);
-      return;
+
+      const spotId = typeof payload.spot_id === "string" ? payload.spot_id : "";
+      const photoId = typeof payload.photo_id === "string" ? payload.photo_id : "";
+      const resultLat = typeof payload.lat === "number" ? payload.lat : Number(payload.lat);
+      const resultLng = typeof payload.lng === "number" ? payload.lng : Number(payload.lng);
+
+      setUploadedCount((c) => c + 1);
+      setResult({
+        spot_id: spotId,
+        photo_id: photoId,
+        lat: Number.isFinite(resultLat) ? resultLat : undefined,
+        lng: Number.isFinite(resultLng) ? resultLng : undefined,
+      });
     }
 
-    setResult({
-      spot_id: spotId,
-      photo_id: photoId,
-      lat: Number.isFinite(resultLat) ? resultLat : undefined,
-      lng: Number.isFinite(resultLng) ? resultLng : undefined,
-    });
+    setUploadingIndex(null);
     setStage("done");
   };
 
   return (
     <div className="min-h-screen bg-background text-on-surface">
-      <TopNav query={placeName} onQueryChange={setPlaceName} />
+      <TopNav query={placeName} onQueryChange={() => {}} />
 
       <main className="mx-auto w-full max-w-7xl px-margin-mobile pb-24 pt-24 md:px-margin-desktop">
         {error ? (
@@ -201,16 +271,26 @@ export default function UploadPage() {
                 <input
                   ref={inputRef}
                   type="file"
+                  multiple
                   accept="image/jpeg,image/png,image/heic,image/heif,image/webp"
                   className="hidden"
                   onChange={async (e) => {
-                    const f = e.target.files?.[0];
-                    if (f) await onPickFile(f);
+                    const list = Array.from(e.target.files ?? []);
+                    if (list.length > 0) await onPickFiles(list);
                   }}
                 />
               </div>
             ) : (
-              <UploadPreview previewUrl={previewUrl} fileLabel={file ? `${file.name} ・ ${formatBytes(file.size)}` : null} />
+              <UploadPreview
+                previewUrl={previewUrl}
+                fileLabel={
+                  activeFile
+                    ? `${activeFile.name} ・ ${formatBytes(activeFile.size)}（${activeIndex + 1}/${files.length}）`
+                    : files.length > 0
+                      ? `${files.length}枚`
+                      : null
+                }
+              />
             )}
           </section>
 
@@ -218,33 +298,51 @@ export default function UploadPage() {
             <div className="flex flex-col gap-4">
               <UploadMapCard
                 gps={gps}
-                manualLocation={manualLocation}
-                onChange={(v) => {
-                  setManualMode(true);
-                  setManualLocation(v);
-                  setGps(null);
+                manualLocation={null}
+                onChange={() => {
+                  // Manual pin picking is disabled for auto-fill mode.
                 }}
               />
 
-              <UploadMetaForm
-                stage={stage}
-                placeName={placeName}
-                setPlaceName={setPlaceName}
-                dateTimeText={dateTimeText}
-                setDateTimeText={setDateTimeText}
-                description={description}
-                setDescription={setDescription}
-                isPublic={isPublic}
-                setIsPublic={setIsPublic}
-              />
+              {stage === "review" && files.length > 1 ? (
+                <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-3 text-body-md font-body-md">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-on-surface-variant">
+                      選択中: {activeIndex + 1}/{files.length}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-outline-variant bg-surface-container-low px-4 py-2 text-label-lg font-label-lg text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-[0.98] disabled:opacity-60"
+                        onClick={() => setActiveIndex((v) => Math.max(0, v - 1))}
+                        disabled={activeIndex === 0}
+                      >
+                        前
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-outline-variant bg-surface-container-low px-4 py-2 text-label-lg font-label-lg text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-[0.98] disabled:opacity-60"
+                        onClick={() => setActiveIndex((v) => Math.min(files.length - 1, v + 1))}
+                        disabled={activeIndex >= files.length - 1}
+                      >
+                        次
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <button
                 type="button"
-                disabled={stage === "select" || stage === "uploading" || !file || !canProceed}
+                disabled={stage === "select" || stage === "uploading" || files.length === 0 || !canProceed}
                 onClick={onSubmit}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-4 text-headline-md font-headline-md text-on-primary shadow-lg shadow-primary/20 hover:bg-primary-container hover:scale-[1.01] transition-all active:scale-95 disabled:opacity-60"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 py-4 text-headline-md font-headline-md text-on-primary shadow-[0px_8px_24px_rgba(0,0,0,0.15)] hover:bg-primary-container transition-colors active:scale-[0.99] disabled:opacity-60"
               >
-                {stage === "uploading" ? "アップロード中..." : "Confirm & Post"}
+                {stage === "uploading"
+                  ? `アップロード中... ${uploadingIndex != null ? `${uploadingIndex + 1}/${files.length}` : ""}（完了: ${uploadedCount}）`
+                  : files.length > 1
+                    ? `まとめてアップロード（${files.length}枚）`
+                    : "アップロードする"}
               </button>
 
               <p className="px-4 text-center text-label-sm font-label-sm text-outline">

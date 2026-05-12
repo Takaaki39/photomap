@@ -1,6 +1,8 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import type { GalleryPhoto, GallerySpot } from "./types";
+import { PhotoLightbox } from "@/components/Photo/PhotoLightbox";
 
 export function GalleryGrid({
   photos,
@@ -8,26 +10,40 @@ export function GalleryGrid({
   selectMode,
   selected,
   onToggleSelected,
+  onDeletePhoto,
 }: {
   photos: GalleryPhoto[];
   spot: GallerySpot | null;
   selectMode: boolean;
   selected: Set<string>;
   onToggleSelected: (id: string) => void;
+  onDeletePhoto?: (photoId: string) => void;
 }) {
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const activePhoto = useMemo(() => photos.find((p) => p.id === activeId) ?? null, [activeId, photos]);
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-gutter">
-      {photos.map((photo) => {
+    <>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-gutter">
+        {photos.map((photo) => {
         const isSelected = selected.has(photo.id);
         const cardRing = selectMode && isSelected ? "ring-2 ring-primary shadow-[0px_4px_12px_rgba(0,0,0,0.1)]" : "";
         return (
-          <button
+          <div
             key={photo.id}
-            type="button"
             onClick={() => {
               if (selectMode) onToggleSelected(photo.id);
+              else setActiveId(photo.id);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" && e.key !== " ") return;
+              e.preventDefault();
+              if (selectMode) onToggleSelected(photo.id);
+              else setActiveId(photo.id);
             }}
             className={`group relative text-left bg-surface-container-lowest rounded-xl overflow-hidden shadow-[0px_2px_4px_rgba(0,0,0,0.05)] hover:shadow-[0px_4px_12px_rgba(0,0,0,0.1)] transition-all ${cardRing}`}
+            role="button"
+            tabIndex={0}
           >
             <div className="aspect-video w-full bg-surface-container-highest">
               {photo.image_url ? (
@@ -44,9 +60,22 @@ export function GalleryGrid({
                 <span className="material-symbols-outlined text-[14px]">location_on</span>
                 <span className="text-label-sm font-label-sm">{spot?.name ?? "Spot"}</span>
               </div>
-              <p className="text-label-lg font-label-lg text-on-surface truncate">{photo.id}</p>
               <p className="text-label-sm font-label-sm text-outline">{new Date(photo.created_at).toLocaleDateString("ja-JP")}</p>
             </div>
+
+            {!selectMode && onDeletePhoto ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeletePhoto(photo.id);
+                }}
+                className="absolute top-2 left-2 rounded-full bg-surface/85 backdrop-blur-md p-1 shadow hover:bg-surface transition-colors"
+                aria-label="削除"
+              >
+                <span className="material-symbols-outlined text-on-surface-variant">delete</span>
+              </button>
+            ) : null}
 
             {selectMode ? (
               <div className="absolute top-2 right-2 transition-opacity">
@@ -66,10 +95,18 @@ export function GalleryGrid({
                 )}
               </div>
             ) : null}
-          </button>
+          </div>
         );
-      })}
-    </div>
+        })}
+      </div>
+
+      <PhotoLightbox
+        open={Boolean(activePhoto?.image_url)}
+        src={activePhoto?.image_url ?? null}
+        alt={spot?.name ?? ""}
+        onClose={() => setActiveId(null)}
+      />
+    </>
   );
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import type { DivIcon, Map as LeafletMap } from "leaflet";
+import type { Icon, Map as LeafletMap } from "leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster";
@@ -67,21 +67,19 @@ function getDisplayModeByZoom(zoom: number): DisplayMode {
   return "spot";
 }
 
-function createMarkerIcon(spot: SpotMapItem): DivIcon {
-  const badge =
-    spot.photo_count > 1
-      ? `<span class="map-marker-badge">+${spot.photo_count - 1}</span>`
-      : "";
-  const thumb = spot.thumbnail_url
-    ? `<img src="${spot.thumbnail_url}" alt="${spot.name}" class="map-marker-thumb" />`
-    : `<div class="map-marker-thumb map-marker-thumb-fallback">${spot.name.slice(0, 1)}</div>`;
-
-  return L.divIcon({
-    html: `<div class="map-marker-wrapper">${thumb}<span class="map-marker-pointer"></span>${badge}</div>`,
-    className: "map-marker-icon",
-    iconSize: [48, 60],
-    iconAnchor: [24, 60],
-  });
+// 全ピンで同一のアイコンを使い回すことで、画像取得とDOM構築コストを最小化する。
+// viewBox の先端 (60,103) を地理座標のアンカーとし、足跡の装飾はその下にはみ出す扱いにする。
+let sharedMarkerIcon: Icon | null = null;
+function getMarkerIcon(): Icon {
+  if (!sharedMarkerIcon) {
+    sharedMarkerIcon = L.icon({
+      iconUrl: "/map-pin.svg",
+      iconSize: [40, 40],
+      iconAnchor: [20, 34],
+      popupAnchor: [0, -34],
+    });
+  }
+  return sharedMarkerIcon;
 }
 
 export type MapViewHandle = {
@@ -202,10 +200,9 @@ const MapViewClient = forwardRef<
     clusterRef.current.clearLayers();
     markerByIdRef.current.clear();
 
+    const icon = getMarkerIcon();
     nextSpots.forEach((spot) => {
-      const marker = L.marker([spot.lat, spot.lng], {
-        icon: createMarkerIcon(spot),
-      });
+      const marker = L.marker([spot.lat, spot.lng], { icon });
       marker.on("click", () => {
         router.push(`/gallery/${spot.id}`);
       });
@@ -411,7 +408,10 @@ const MapViewClient = forwardRef<
 
       const markerClusterGroup = L.markerClusterGroup({
         showCoverageOnHover: false,
-        disableClusteringAtZoom: 16,
+        // 県レベル(=12)以上では完全に個別ピン表示にする。
+        disableClusteringAtZoom: 12,
+        // クラスタ判定距離(px)。狭めるほど孤立ピンが個別表示されやすい。
+        maxClusterRadius: 24,
         spiderfyOnMaxZoom: true,
       });
       // Cluster should zoom/spiderfy, not navigate to gallery (prevents /gallery/cluster:...).
@@ -595,9 +595,10 @@ const MapViewClient = forwardRef<
           style={{ height: "100%", width: "100%" }}
         >
           <TileLayer
-            // CARTO Voyager: borders/roads are more legible than default OSM tiles.
-            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            // Japanese-labeled tiles (OpenStreetMap Japan).
+            url="https://{s}.tile.openstreetmap.jp/{z}/{x}/{y}.png"
+            subdomains={["a", "b", "c"]}
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://openstreetmap.jp/">OpenStreetMap Japan</a>'
           />
           {prefGeoJson && currentZoom >= 6 ? (
             <GeoJSON data={prefGeoJson as never} style={() => prefStyle} />

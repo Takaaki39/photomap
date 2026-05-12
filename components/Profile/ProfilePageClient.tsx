@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ProfileTopNav } from "@/components/Profile/ProfileTopNav";
 import { ProfileBottomNavMobile } from "@/components/Profile/ProfileBottomNavMobile";
+import { PhotoLightbox } from "@/components/Photo/PhotoLightbox";
 import type { MyPhoto } from "@/components/Me/types";
 
 export function ProfilePageClient() {
@@ -51,6 +52,20 @@ export function ProfilePageClient() {
   }, [photos]);
 
   const [tab, setTab] = useState<"gallery" | "favorites" | "maps">("gallery");
+  const [activePhotoId, setActivePhotoId] = useState<string | null>(null);
+  const activePhoto = useMemo(() => photosNewestFirst.find((p) => p.id === activePhotoId) ?? null, [activePhotoId, photosNewestFirst]);
+
+  const deletePhoto = async (photoId: string) => {
+    if (!confirm("この写真を削除しますか？（クラウド上の画像も削除されます）")) return;
+    const res = await fetch(`/api/photos/${photoId}`, { method: "DELETE" });
+    if (!res.ok) {
+      const text = await res.text();
+      setError(text || "削除に失敗しました。");
+      return;
+    }
+    setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+    if (activePhotoId === photoId) setActivePhotoId(null);
+  };
 
   return (
     <div className="bg-background text-on-background min-h-screen pb-24 md:pb-0">
@@ -156,7 +171,30 @@ export function ProfilePageClient() {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {photosNewestFirst.slice(0, 24).map((p) => (
-                <div key={p.id} className="group relative aspect-3/4 overflow-hidden rounded-xl bg-surface-container shadow-sm hover:shadow-md transition-shadow">
+                <div
+                  key={p.id}
+                  onClick={() => setActivePhotoId(p.id)}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    e.preventDefault();
+                    setActivePhotoId(p.id);
+                  }}
+                  className="group relative aspect-3/4 overflow-hidden rounded-xl bg-surface-container shadow-sm hover:shadow-md transition-shadow text-left"
+                  role="button"
+                  tabIndex={0}
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void deletePhoto(p.id);
+                    }}
+                    className="absolute top-2 left-2 z-10 rounded-full bg-surface/85 backdrop-blur-md p-1 shadow hover:bg-surface transition-colors"
+                    aria-label="削除"
+                  >
+                    <span className="material-symbols-outlined text-on-surface-variant">delete</span>
+                  </button>
+
                   {p.image_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -245,6 +283,13 @@ export function ProfilePageClient() {
           </div>
         </section>
       </main>
+
+      <PhotoLightbox
+        open={Boolean(activePhoto?.image_url)}
+        src={activePhoto?.image_url ?? null}
+        alt={activePhoto?.spot_name || "写真"}
+        onClose={() => setActivePhotoId(null)}
+      />
 
       <ProfileBottomNavMobile />
     </div>
