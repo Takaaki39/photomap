@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>地図（MapView / MapViewClient）実装ドキュメント</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --text: #e6edf3;
+      --muted: #8b9cb3;
+      --accent: #58a6ff;
+      --border: #30363d;
+      --code-bg: #161b22;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 2rem clamp(1rem, 4vw, 3rem);
+      font-family: "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      max-width: 56rem;
+      margin-inline: auto;
+    }
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+      margin-top: 0;
+    }
+    h2 {
+      font-size: 1.2rem;
+      margin-top: 2rem;
+      color: var(--accent);
+      font-weight: 600;
+    }
+    h3 { font-size: 1rem; margin-top: 1.25rem; color: var(--text); }
+    p { margin: 0.75rem 0; color: var(--muted); }
+    p strong { color: var(--text); }
+    ul, ol { color: var(--muted); padding-left: 1.35rem; }
+    li { margin: 0.35rem 0; }
+    code, .path {
+      font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+      font-size: 0.88em;
+      background: var(--code-bg);
+      padding: 0.15em 0.45em;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      color: #d2a8ff;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.1rem;
+      overflow-x: auto;
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+    pre code {
+      border: none;
+      padding: 0;
+      background: none;
+      color: #7ee787;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin: 1rem 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+    }
+    th { background: var(--surface); color: var(--text); }
+    td { color: var(--muted); }
+    .meta {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+    a { color: var(--accent); }
+    .note {
+      border-left: 3px solid var(--accent);
+      padding-left: 1rem;
+      margin: 1rem 0;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <h1>地図ビュー実装ドキュメント</h1>
+  <p class="meta">
+    対象: <span class="path">components/Map/MapView.tsx</span> /
+    <span class="path">components/Map/MapViewClient.tsx</span><br />
+    生成日: 2026-05-14（コードベースに基づく）
+  </p>
+
+  <h2>1. 概要</h2>
+  <p>
+    スポットを <strong>Leaflet</strong> と <strong>react-leaflet</strong> で地図上に表示し、
+    表示範囲（バウンディングボックス）とズームに応じて <code>GET /api/spots</code> からデータを取得するクライアントコンポーネントです。
+    マーカーは <strong>leaflet.markercluster</strong> でクラスタリングし、ズーム 12 以上では個別ピン表示に切り替わります。
+  </p>
+
+  <h2>2. エントリ: MapView</h2>
+  <p>
+    <code>next/dynamic</code> で <code>MapViewClient</code> を遅延読み込みし、<code>ssr: false</code> に設定しています。
+    Leaflet はブラウザ DOM に依存するため、サーバー側ではレンダリングせず、ロード中はプレースホルダーを表示します。
+  </p>
+  <pre><code>const MapViewClient = dynamic(() => import("./MapViewClient"), {
+  ssr: false,
+  loading: () => &lt;div className="..." /&gt;,
+});</code></pre>
+
+  <h2>3. データ型</h2>
+  <h3>SpotMapItem</h3>
+  <p>API から受け取るスポットの地図用スキーマです。</p>
+  <table>
+    <thead>
+      <tr><th>フィールド</th><th>型</th><th>説明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>id</code></td><td>string</td><td>スポット ID（クリックで <code>/gallery/[id]</code> へ遷移）</td></tr>
+      <tr><td><code>name</code></td><td>string</td><td>名称</td></tr>
+      <tr><td><code>address</code></td><td>string | null</td><td>住所</td></tr>
+      <tr><td><code>lat</code> / <code>lng</code></td><td>number</td><td>緯度・経度</td></tr>
+      <tr><td><code>photo_count</code></td><td>number</td><td>写真枚数</td></tr>
+      <tr><td><code>thumbnail_url</code></td><td>string | null</td><td>サムネイル URL</td></tr>
+    </tbody>
+  </table>
+
+  <h3>DisplayMode</h3>
+  <p>ズームレベルから導出される「表示モード」ラベル用の列挙です。</p>
+  <p><code>world | country | region | prefecture | city | spot | detail</code></p>
+
+  <h2>4. MapViewClient の props</h2>
+  <table>
+    <thead>
+      <tr><th>prop</th><th>説明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>query</code></td><td>オプション。トリム・小文字化後、名称・住所に部分一致するスポットだけマーカー更新対象にする。</td></tr>
+      <tr><td><code>showInternalControls</code></td><td>デフォルト true。ズームプリセットボタンと表示モード表示の表示切替。</td></tr>
+      <tr><td><code>requestedZoom</code></td><td>地図準備後に <code>setZoom</code> する外部指定ズーム。</td></tr>
+      <tr><td><code>locateSignal</code></td><td>変更時に現在地取得して地図を合わせる（ズームは既存と 14 の大きい方）。</td></tr>
+      <tr><td><code>initialCenter</code> / <code>initialZoom</code></td><td>初期中心・ズーム。無効時は localStorage または東京フォールバック。</td></tr>
+      <tr><td><code>recenterSignal</code></td><td>変更時に <code>initialCenter</code> と <code>initialZoom</code> で <code>setView</code>（アニメーションなし）。</td></tr>
+      <tr><td><code>onViewChange</code></td><td>移動・ズーム終了時に <code>{ lat, lng, zoom }</code> を親へ通知。</td></tr>
+      <tr><td><code>mapWrapClassName</code></td><td>地図ラッパーのクラス。未指定時は <code>h-[62vh]</code> 等のデフォルト。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>5. ref（MapViewHandle）</h2>
+  <ul>
+    <li><code>setZoom(zoom: number)</code> — 現在の地図インスタンスへズーム設定。</li>
+    <li><code>locate()</code> — Geolocation API で現在地へ移動（ズームは max(現在, 14)）。</li>
+  </ul>
+
+  <h2>6. 永続化: home:lastView</h2>
+  <p>
+    <code>readPersistedHomeView()</code> が <code>localStorage</code> キー <code>home:lastView</code> から
+    <code>{ lat, lng, zoom }</code> を読み込みます。数値検証とズームのクランプ（2〜18）を行います。
+    <code>MapContainer</code> の初期 <code>center</code> / <code>zoom</code> および <code>onMapReady</code> 内の初回 <code>setView</code> に利用されます。
+  </p>
+
+  <h2>7. URL クエリ（フォーカス・デバッグ）</h2>
+  <table>
+    <thead>
+      <tr><th>パラメータ</th><th>用途</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>spot_id</code></td><td>デバッグ表示やアップロード後の文脈用。詳細パネルの自動オープンは意図的に行わない（コメント記載）。</td></tr>
+      <tr><td><code>lat</code>, <code>lng</code>, <code>zoom</code></td><td>数値として有効な場合、別 <code>useEffect</code> で <code>setView</code> 後に <code>fetchSpots</code> を二重 <code>requestAnimationFrame</code> 経由で実行。</td></tr>
+      <tr><td><code>debug</code></td><td><code>1</code>, <code>true</code>, 空文字, <code>yes</code> のいずれかでコンソールログと画面左下デバッグパネル表示。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>8. スポット取得 API</h2>
+  <p>
+    クライアントは <code>fetch(`/api/spots?${params}`, { cache: "no-store" })</code> を呼び出します。
+  </p>
+  <ul>
+    <li><code>bounds</code>: <code>south,west,north,east</code>（5 桁固定小数でキー化し重複取得を抑制）</li>
+    <li><code>zoom</code>: 現在のズームレベル</li>
+  </ul>
+  <p class="note">
+    サーバー側（<code>app/api/spots/route.ts</code>）はセッション必須（未ログインは 401）、
+    <code>get_spots_in_bounds</code> RPC で範囲内スポットを取得する構成です。
+  </p>
+
+  <h2>9. 取得のスロットリング・重複防止</h2>
+  <ul>
+    <li>同一 <code>fetchKey</code> かつ直近 700ms 以内の再実行はスキップ。</li>
+    <li>同一キーで進行中のリクエストがあればスキップ。</li>
+    <li>成功時に <code>lastFetchKeyRef</code> を更新。</li>
+  </ul>
+
+  <h2>10. マーカーとクラスタ</h2>
+  <ul>
+    <li>共有アイコン <code>getMarkerIcon()</code>: <code>/map-pin.svg</code>、サイズ 40×40、アンカー・ポップアップ位置を固定。</li>
+    <li><code>L.markerClusterGroup</code>: <code>disableClusteringAtZoom: 12</code>、<code>maxClusterRadius: 24</code>、<code>spiderfyOnMaxZoom: true</code>。</li>
+    <li><code>clusterclick</code> で <code>zoomToBounds</code> または <code>spiderfy</code> を呼び、ギャラリー URL への誤遷移を防止。</li>
+    <li>個別マーカーの <code>click</code> で <code>router.push(`/gallery/${spot.id}`)</code>。</li>
+  </ul>
+
+  <h2>11. 都道府県境界（GeoJSON）</h2>
+  <p>
+    外部 GeoJSON（<code>PREF_BORDERS_URL</code>）を <code>cache: "force-cache"</code> で取得し、
+    <code>react-leaflet</code> の <code>GeoJSON</code> で描画します。
+    ズーム 6 未満では非表示。線の <code>weight</code> / <code>opacity</code> は現在ズームに応じて変化します。
+  </p>
+
+  <h2>12. タイルレイヤ</h2>
+  <p>
+    OpenStreetMap Japan のタイル（<code>{s}.tile.openstreetmap.jp</code>、サブドメイン a/b/c）とクレジット表記を使用しています。
+  </p>
+
+  <h2>13. 子コンポーネントの役割</h2>
+  <table>
+    <thead>
+      <tr><th>コンポーネント</th><th>役割</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>MapEventBridge</code></td><td><code>moveend</code> / <code>zoomend</code> でバウンド変更時に <code>fetchSpots</code>、任意で <code>onViewChange</code>。</td></tr>
+      <tr><td><code>MapInitializer</code></td><td>マウント時に <code>onReady(map)</code> を一度呼び、クラスタ初期化と初回取得を実行。</td></tr>
+      <tr><td><code>ModeSync</code></td><td><code>zoomend</code> と初回で親の表示モード状態を同期。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>14. その他の挙動</h2>
+  <ul>
+    <li><strong>ResizeObserver</strong>: ラッパー要素のリサイズ時に <code>map.invalidateSize({ pan: false })</code>。</li>
+    <li><strong>アンマウント</strong>: クラスタレイヤを地図から除去。</li>
+    <li><strong>ポップアップ</strong>: 意図的に未使用（コメントで明記）。</li>
+    <li><strong>表示モードボタン</strong>: 世界(2) / 国(5) / 地方(8) / 県(11) / 市(14) の固定ズームへジャンプ。</li>
+  </ul>
+
+  <h2>15. 関連ファイル</h2>
+  <ul>
+    <li><code>components/Map/MapView.tsx</code></li>
+    <li><code>components/Map/MapViewClient.tsx</code></li>
+    <li><code>app/api/spots/route.ts</code></li>
+    <li><code>public/map-pin.svg</code>（マーカー画像）</li>
+  </ul>
+</body>
+</html>
