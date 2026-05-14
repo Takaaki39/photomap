@@ -254,7 +254,7 @@ export default function UploadPage() {
 
   return (
     <div className="min-h-screen bg-background text-on-surface">
-      <TopNav query={placeName} onQueryChange={() => {}} />
+      <TopNav />
 
       <main className="mx-auto w-full max-w-7xl px-margin-mobile pb-24 pt-24 md:px-margin-desktop">
         {error ? (

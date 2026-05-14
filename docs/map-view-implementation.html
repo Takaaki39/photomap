@@ -92,6 +92,23 @@
       margin: 1rem 0;
       color: var(--muted);
     }
+    .stack-tag {
+      display: inline-block;
+      font-size: 0.72rem;
+      padding: 0.15em 0.5em;
+      border-radius: 999px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      margin-right: 0.35rem;
+      vertical-align: middle;
+    }
+    h4 {
+      font-size: 0.95rem;
+      margin: 1rem 0 0.4rem;
+      color: var(--text);
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -99,8 +116,170 @@
   <p class="meta">
     対象: <span class="path">components/Map/MapView.tsx</span> /
     <span class="path">components/Map/MapViewClient.tsx</span><br />
-    生成日: 2026-05-14（コードベースに基づく）
+    生成日: 2026-05-14（コードベースに基づく） /
+    依存バージョンは <span class="path">package.json</span> 準拠
   </p>
+
+  <h2>技術スタック（詳細）</h2>
+
+  <h3>フレームワークとランタイム</h3>
+  <table>
+    <thead>
+      <tr><th>技術</th><th>バージョン（目安）</th><th>地図周辺での役割</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Next.js</strong></td>
+        <td>16.2.4</td>
+        <td>App Router。<code>next/dynamic</code> の <code>ssr: false</code>、<code>next/navigation</code> の <code>useRouter</code> / <code>useSearchParams</code>、Route Handler 経由の <code>/api/spots</code>。</td>
+      </tr>
+      <tr>
+        <td><strong>React</strong></td>
+        <td>19.2.4</td>
+        <td>クライアントコンポーネント（<code>"use client"</code>）。Hooks: <code>useState</code> / <code>useEffect</code> / <code>useRef</code> / <code>useMemo</code> / <code>useCallback</code>、<code>forwardRef</code> / <code>useImperativeHandle</code>。</td>
+      </tr>
+      <tr>
+        <td><strong>TypeScript</strong></td>
+        <td>^5</td>
+        <td>型付き props・Leaflet の <code>Map</code> / <code>Icon</code> / <code>PathOptions</code> など。</td>
+      </tr>
+      <tr>
+        <td><strong>Node（実行環境）</strong></td>
+        <td>（環境依存）</td>
+        <td>開発時は <code>next dev --webpack</code>、本番ビルドは <code>next build --webpack</code>。バンドラは <strong>Webpack</strong> を明示指定（デフォルトの Turbopack ではなく）。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>地図スタック（npm 依存）</h3>
+  <p>この画面で実際にコードから参照している地図関連パッケージです。</p>
+  <table>
+    <thead>
+      <tr><th>パッケージ</th><th>バージョン</th><th>用途</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>leaflet</code></td>
+        <td>^1.9.4</td>
+        <td>2D 地図コア。<code>L.map</code> 相当を <code>MapContainer</code> 経由で生成。<code>L.marker</code>、<code>L.icon</code>、<code>L.markerClusterGroup</code>（拡張）を直接使用。</td>
+      </tr>
+      <tr>
+        <td><code>react-leaflet</code></td>
+        <td>^5.0.0</td>
+        <td><code>MapContainer</code>、<code>TileLayer</code>、<code>GeoJSON</code>、<code>useMapEvents</code>。React ツリーと Leaflet インスタンスの橋渡し。</td>
+      </tr>
+      <tr>
+        <td><code>leaflet.markercluster</code></td>
+        <td>^1.5.3</td>
+        <td>大量マーカーのクラスタリング。<code>L.markerClusterGroup</code> を <code>addLayer</code> で地図に載せるパターン（プラグインは Leaflet に副作用で登録）。</td>
+      </tr>
+      <tr>
+        <td><code>@types/leaflet</code></td>
+        <td>^1.9.21</td>
+        <td>Leaflet の型定義。</td>
+      </tr>
+      <tr>
+        <td><code>@types/leaflet.markercluster</code></td>
+        <td>^1.5.6</td>
+        <td>markercluster プラグインの型定義。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h4>スタイル（CSS）</h4>
+  <ul>
+    <li><code>leaflet/dist/leaflet.css</code> — 地図タイル・コントロール・ポップアップ等のベーススタイル。</li>
+    <li>markercluster 用の専用 CSS は本コンポーネントでは明示 import していない（プラグインの見た目は Leaflet デフォルト＋クラスタ既定に依存）。必要なら公式の markercluster CSS を追加する余地あり。</li>
+  </ul>
+
+  <h3>UI・スタイリング</h3>
+  <table>
+    <thead>
+      <tr><th>技術</th><th>バージョン</th><th>地図 UI での使い方</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Tailwind CSS</strong></td>
+        <td>^4（<code>@tailwindcss/postcss</code>）</td>
+        <td>セクション枠、オーバーレイ（ズームボタン・表示モード・デバッグパネル）、高さ <code>vh</code> 指定などユーティリティクラス。<code>bg-surface</code> / <code>text-on-surface</code> などデザイントークン系クラス。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>データ層・認証（API と連携する部分）</h3>
+  <p>地図コンポーネント自体は <code>fetch</code> のみだが、呼び先の Route Handler が使うスタックです。</p>
+  <table>
+    <thead>
+      <tr><th>技術</th><th>バージョン</th><th>役割</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Supabase</strong></td>
+        <td><code>@supabase/supabase-js</code> ^2.105、<code>@supabase/auth-helpers-nextjs</code> ^0.15</td>
+        <td><code>/api/spots</code> で DB アクセス・RPC <code>get_spots_in_bounds</code>。認証済みユーザーのみピン返却。</td>
+      </tr>
+      <tr>
+        <td><strong>NextAuth.js</strong></td>
+        <td>^4.24</td>
+        <td>サーバー側セッション（<code>getServerAuthSession</code>）で API を保護。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>ブラウザ標準 API</h3>
+  <ul>
+    <li><strong>Fetch API</strong> — <code>/api/spots</code>、都道府県 GeoJSON URL。オプション <code>cache: "no-store"</code> / <code>"force-cache"</code>。</li>
+    <li><strong>Geolocation API</strong> — <code>navigator.geolocation.getCurrentPosition</code>（高精度・タイムアウト 7s・<code>maximumAge</code> 60s）。</li>
+    <li><strong>localStorage</strong> — 直前の地図ビュー JSON（<code>home:lastView</code>）。</li>
+    <li><strong>ResizeObserver</strong> — 地図ラッパーのサイズ変化で <code>invalidateSize</code>。</li>
+    <li><strong>requestAnimationFrame</strong> — フォーカス URL 変更後の <code>fetchSpots</code> を Leaflet のビュー適用後に遅延。</li>
+    <li><strong>URLSearchParams</strong> — クエリ組み立て・<code>useSearchParams</code> 連携。</li>
+  </ul>
+
+  <h3>外部サービス・静的アセット</h3>
+  <ul>
+    <li><strong>OpenStreetMap Japan</strong> — ラスタタイル <code>https://&#123;s&#125;.tile.openstreetmap.jp/&#123;z&#125;/&#123;x&#125;/&#123;y&#125;.png</code>（サブドメイン分散）。</li>
+    <li><strong>GitHub raw</strong> — 都道府県境界 GeoJSON（リポジトリ <code>four4to6/47-prefectures</code>）。アプリの <code>npm</code> に <code>open-data-jp-prefectures-geojson</code> もあるが、本コンポーネントは現状この URL を直接使用。</li>
+    <li><strong>同一オリジンの SVG</strong> — <code>/map-pin.svg</code> を <code>L.icon</code> の <code>iconUrl</code> に指定。</li>
+  </ul>
+
+  <h3>周辺プロジェクト依存（地図以外だがプロダクト全体）</h3>
+  <p>地図ファイルからは未使用だが、同じ <span class="path">package.json</span> に含まれる代表例です。</p>
+  <ul>
+    <li><code>next-pwa</code> ^5.6 — PWA / Service Worker。</li>
+    <li><code>sharp</code> — 画像処理（アップロード・リサイズ等のサーバー処理側で想定）。</li>
+    <li><code>exifr</code> — EXIF 読取（写真ジオタグ等）。</li>
+    <li><strong>Playwright</strong>（devDependencies）— E2E（<code>test:e2e</code>）。</li>
+  </ul>
+
+  <h3>品質・静的解析</h3>
+  <ul>
+    <li><strong>ESLint</strong> ^9 + <strong>eslint-config-next</strong> 16.2.4 — Next / React 向けルールセット。</li>
+    <li><strong>TypeScript</strong> — <code>@types/node</code> / <code>@types/react</code> / <code>@types/react-dom</code>（dev）。</li>
+  </ul>
+
+  <h3>MapViewClient での import 一覧（参照用）</h3>
+  <pre><code>// React
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+
+// Next.js
+import { useRouter, useSearchParams } from "next/navigation";
+
+// Leaflet 本体 + 型
+import type { Icon, Map as LeafletMap } from "leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import "leaflet.markercluster";
+
+// react-leaflet
+import { GeoJSON, MapContainer, TileLayer, useMapEvents } from "react-leaflet";</code></pre>
+
+  <h3>アーキテクチャ上のポイント</h3>
+  <ul>
+    <li><span class="stack-tag">CSR</span>Leaflet は DOM／ウィンドウ前提のため、<code>MapView</code> で <code>dynamic(..., { ssr: false })</code> しクライアント専用バンドルに分離。</li>
+    <li><span class="stack-tag">命令型 + 宣言型</span>ベース地図は react-leaflet の宣言的コンポーネント、マーカー群は <code>L.marker</code> とクラスタを命令的に生成・差し替え。</li>
+    <li><span class="stack-tag">RSC 境界</span>親が Server Component でも、地図部分だけ Client Component の subtree としてマウントされる想定。</li>
+  </ul>
 
   <h2>1. 概要</h2>
   <p>

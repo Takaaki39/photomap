@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 
+import { AccountCircleNavIcon } from "@/components/Nav/AccountCircleNavIcon";
+
 export function ProfileTopNav() {
   return (
-    <header className="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-margin-mobile md:px-margin-desktop h-16 bg-inverse-surface/92 backdrop-blur-md shadow-sm">
+    <header className="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-5 sm:px-6 md:px-10 h-16 bg-inverse-surface/92 backdrop-blur-md shadow-sm">
       <div className="flex items-center gap-4">
         <span className="text-headline-md font-headline-md font-bold text-primary-fixed">GeoLens</span>
       </div>
@@ -42,10 +44,10 @@ export function ProfileTopNav() {
         </button>
         <Link
           href="/profile"
-          className="material-symbols-outlined text-primary-fixed-dim text-2xl p-2 rounded-full hover:bg-inverse-on-surface/10 transition-colors"
+          className="inline-flex items-center justify-center p-2 rounded-full hover:bg-inverse-on-surface/10 transition-colors"
           aria-label="Account"
         >
-          account_circle
+          <AccountCircleNavIcon />
         </Link>
       </div>
     </header>

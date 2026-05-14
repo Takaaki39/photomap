@@ -49,14 +49,6 @@ function readPersistedHomeView(): { lat: number; lng: number; zoom: number } | n
   }
 }
 
-const modeButtons: { mode: DisplayMode; label: string; zoom: number }[] = [
-  { mode: "world", label: "世界", zoom: 2 },
-  { mode: "country", label: "国", zoom: 5 },
-  { mode: "region", label: "地方", zoom: 8 },
-  { mode: "prefecture", label: "県", zoom: 11 },
-  { mode: "city", label: "市", zoom: 14 },
-];
-
 function getDisplayModeByZoom(zoom: number): DisplayMode {
   if (zoom <= 3) return "world";
   if (zoom <= 6) return "country";
@@ -68,15 +60,15 @@ function getDisplayModeByZoom(zoom: number): DisplayMode {
 }
 
 // 全ピンで同一のアイコンを使い回すことで、画像取得とDOM構築コストを最小化する。
-// viewBox の先端 (60,103) を地理座標のアンカーとし、足跡の装飾はその下にはみ出す扱いにする。
+// viewBox 底中央 (60,85) を地理座標のアンカーとする（本体 rect の下端）。
 let sharedMarkerIcon: Icon | null = null;
 function getMarkerIcon(): Icon {
   if (!sharedMarkerIcon) {
     sharedMarkerIcon = L.icon({
       iconUrl: "/map-pin.svg",
       iconSize: [40, 40],
-      iconAnchor: [20, 34],
-      popupAnchor: [0, -34],
+      iconAnchor: [20, (85 * 40) / 120],
+      popupAnchor: [0, (-85 * 40) / 120],
     });
   }
   return sharedMarkerIcon;
@@ -542,24 +534,9 @@ const MapViewClient = forwardRef<
   return (
     <section className="relative rounded-lg border">
       {showInternalControls ? (
-        <>
-          <div className="absolute top-3 left-3 z-500 flex gap-2 rounded-md bg-surface/95 p-2 shadow">
-            {modeButtons.map((button) => (
-              <button
-                key={button.mode}
-                type="button"
-                onClick={() => mapRef.current?.setZoom(button.zoom)}
-                className="rounded border border-outline-variant px-2 py-1 text-xs text-on-surface hover:bg-surface-container-high"
-              >
-                {button.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="absolute top-3 right-3 z-500 rounded-md bg-surface/95 px-3 py-1 text-xs text-on-surface shadow">
-            表示モード: {modeLabel} {loading ? "(更新中)" : ""}
-          </div>
-        </>
+        <div className="absolute top-3 right-3 z-500 rounded-md bg-surface/95 px-3 py-1 text-xs text-on-surface shadow">
+          表示モード: {modeLabel} {loading ? "(更新中)" : ""}
+        </div>
       ) : null}
 
       {debug ? (

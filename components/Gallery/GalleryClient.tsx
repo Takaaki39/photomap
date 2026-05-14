@@ -14,7 +14,6 @@ export function GalleryClient({ spotId }: { spotId: string }) {
   const [spot, setSpot] = useState<GallerySpot | null>(null);
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [total, setTotal] = useState<number | null>(null);
-  const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [selectMode, setSelectMode] = useState(false);
@@ -53,13 +52,6 @@ export function GalleryClient({ spotId }: { spotId: string }) {
     })();
   }, [spotId, isUuid]);
 
-  const filtered = useMemo(() => {
-    const keyword = q.trim().toLowerCase();
-    if (!keyword) return effectivePhotos;
-    // SpotPhoto currently doesn't include title/location; filter by date/id for now.
-    return effectivePhotos.filter((p) => p.id.toLowerCase().includes(keyword) || p.created_at.toLowerCase().includes(keyword));
-  }, [effectivePhotos, q]);
-
   const selectedCount = selected.size;
 
   const toggleSelected = (id: string) => {
@@ -89,7 +81,7 @@ export function GalleryClient({ spotId }: { spotId: string }) {
 
   return (
     <div className="bg-background text-on-surface min-h-screen pb-24">
-      <TopNav query={q} onQueryChange={setQ} />
+      <TopNav />
 
       <main className="pt-20 px-margin-mobile md:px-margin-desktop max-w-7xl mx-auto">
         <GalleryHeader
@@ -107,7 +99,7 @@ export function GalleryClient({ spotId }: { spotId: string }) {
         {effectiveError ? <p className="mb-md text-body-md font-body-md text-error">{effectiveError}</p> : null}
 
         <GalleryGrid
-          photos={filtered}
+          photos={effectivePhotos}
           spot={effectiveSpot}
           selectMode={selectMode && isUuid}
           selected={selected}

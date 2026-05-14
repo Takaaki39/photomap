@@ -1,27 +1,18 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { HomeBottomRightControls } from "@/components/Home/HomeBottomRightControls";
 import { HomeBottomSheetIndicator } from "@/components/Home/HomeBottomSheetIndicator";
 import { HomeMobileSearch } from "@/components/Home/HomeMobileSearch";
 import { TopNav } from "@/components/Nav/TopNav";
-import { HomeZoomControl } from "@/components/Home/HomeZoomControl";
 import { BottomNav } from "@/components/Nav/BottomNav";
 
 const MapViewClient = dynamic(() => import("@/components/Map/MapViewClient"), {
   ssr: false,
   loading: () => <div className="h-full w-full bg-surface-container-highest" />,
 });
-
-function activeFromZoom(zoom: number): "city" | "prefecture" | "region" | "country" | "world" {
-  if (zoom >= 14) return "city";
-  if (zoom >= 11) return "prefecture";
-  if (zoom >= 8) return "region";
-  if (zoom >= 5) return "country";
-  return "world";
-}
 
 function readLastView(): { center: { lat: number; lng: number } | null; zoom: number | null } {
   if (typeof window === "undefined") return { center: null, zoom: null };
@@ -40,13 +31,10 @@ function readLastView(): { center: { lat: number; lng: number } | null; zoom: nu
 
 export function HomePageClient() {
   const router = useRouter();
-  const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState(11);
   const [locateSignal, setLocateSignal] = useState(0);
   const [initialCenter, setInitialCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [recenterSignal, setRecenterSignal] = useState(0);
-
-  const active = useMemo(() => activeFromZoom(zoom), [zoom]);
 
   useEffect(() => {
     // If user navigated back from another page, Leaflet may start with wrong size.
@@ -125,12 +113,11 @@ export function HomePageClient() {
 
   return (
     <div className="home-outlined-typo relative w-full h-svh overflow-hidden bg-background text-on-surface">
-      <TopNav query={query} onQueryChange={setQuery} />
+      <TopNav />
 
       <main className="relative h-svh w-full">
         <div className="absolute inset-0 z-0">
           <MapViewClient
-            query={query}
             showInternalControls={false}
             requestedZoom={zoom}
             locateSignal={locateSignal}
@@ -150,14 +137,6 @@ export function HomePageClient() {
 
         {/* Mobile Search Bar Overlay */}
         <HomeMobileSearch />
-
-        {/* Zoom Level Control */}
-        <HomeZoomControl
-          active={active}
-          onSelectZoom={(z) => {
-            setZoom(z);
-          }}
-        />
 
         {/* Controls Bottom-Right */}
         <HomeBottomRightControls

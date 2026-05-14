@@ -24,7 +24,6 @@ function readLastZoom(): number {
 }
 
 export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {
-  const [q, setQ] = useState("");
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [total, setTotal] = useState<number | null>(null);
 
@@ -79,12 +78,6 @@ export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {
     })();
   }, [clusterId, parsed]);
 
-  const filtered = useMemo(() => {
-    const keyword = q.trim().toLowerCase();
-    if (!keyword) return photos;
-    return photos.filter((p) => p.id.toLowerCase().includes(keyword) || p.created_at.toLowerCase().includes(keyword));
-  }, [photos, q]);
-
   const deletePhoto = async (photoId: string) => {
     if (!confirm("この写真を削除しますか？（クラウド上の画像も削除されます）")) return;
     const res = await fetch(`/api/photos/${photoId}`, { method: "DELETE" });
@@ -98,20 +91,20 @@ export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {
 
   return (
     <div className="bg-background text-on-surface min-h-screen pb-24">
-      <TopNav query={q} onQueryChange={setQ} />
+      <TopNav />
 
       <main className="pt-20 px-margin-mobile md:px-margin-desktop max-w-7xl mx-auto">
         <div className="mb-6">
           <h1 className="text-headline-lg font-headline-lg text-on-surface">ギャラリー</h1>
           <p className="text-body-md font-body-md text-on-surface-variant">
-            {spot?.name ?? "このエリア"} / {total ?? filtered.length}件
+            {spot?.name ?? "このエリア"} / {total ?? photos.length}件
           </p>
         </div>
 
         {derivedError ? <p className="mb-md text-body-md font-body-md text-error">{derivedError}</p> : null}
 
         <GalleryGrid
-          photos={filtered}
+          photos={photos}
           spot={spot}
           selectMode={false}
           selected={new Set()}
