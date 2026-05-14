@@ -12,6 +12,10 @@ export const metadata: Metadata = {
   title: "PhotoMap",
   description: "写真の位置情報を地図で管理するフォトマップアプリ",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/PhotoMapIcon-512.png",
+    apple: "/PhotoMapIcon-512.png",
+  },
 };
 
 export default function RootLayout({
