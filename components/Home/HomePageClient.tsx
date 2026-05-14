@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { HomeBottomRightControls } from "@/components/Home/HomeBottomRightControls";
 import { HomeBottomSheetIndicator } from "@/components/Home/HomeBottomSheetIndicator";
-import { HomeMobileSearch } from "@/components/Home/HomeMobileSearch";
 import { TopNav } from "@/components/Nav/TopNav";
 import { BottomNav } from "@/components/Nav/BottomNav";
 
@@ -134,9 +133,6 @@ export function HomePageClient() {
             }}
           />
         </div>
-
-        {/* Mobile Search Bar Overlay */}
-        <HomeMobileSearch />
 
         {/* Controls Bottom-Right */}
         <HomeBottomRightControls
