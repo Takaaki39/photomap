@@ -39,7 +39,14 @@ export function PhotoLightbox({
             className="absolute -top-3 -right-3 h-10 w-10 rounded-full bg-surface-container-lowest text-on-surface shadow-lg flex items-center justify-center hover:bg-surface-container-high transition-colors"
             aria-label="閉じる"
           >
-            <span className="material-symbols-outlined">close</span>
+            <img
+              src="/icons/close_32dp.svg"
+              alt=""
+              width={24}
+              height={24}
+              className="block size-6"
+              draggable={false}
+            />
           </button>
 
           <div className="overflow-hidden rounded-2xl bg-black shadow-2xl" onClick={(e) => e.stopPropagation()}>

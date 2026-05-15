@@ -5,18 +5,16 @@ import type { Icon, Map as LeafletMap } from "leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster";
+import "leaflet.markercluster/dist/MarkerCluster.css";
+import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import { useRouter, useSearchParams } from "next/navigation";
 import { GeoJSON, MapContainer, TileLayer, useMapEvents } from "react-leaflet";
-
-type SpotMapItem = {
-  id: string;
-  name: string;
-  address: string | null;
-  lat: number;
-  lng: number;
-  photo_count: number;
-  thumbnail_url: string | null;
-};
+import {
+  type SpotMapItem,
+  readSpotsFromBoundsCache,
+  spotsBoundsCache,
+  writeSpotsBoundsCache,
+} from "@/lib/spotsBoundsCache";
 
 type DisplayMode =
   | "world"
@@ -195,6 +193,7 @@ const MapViewClient = forwardRef<
     const icon = getMarkerIcon();
     nextSpots.forEach((spot) => {
       const marker = L.marker([spot.lat, spot.lng], { icon });
+      (marker.options as Record<string, string>).spotId = spot.id;
       marker.on("click", () => {
         router.push(`/gallery/${spot.id}`);
       });
@@ -265,15 +264,39 @@ const MapViewClient = forwardRef<
         const bounds = map.getBounds();
         const zoom = map.getZoom();
         setCurrentZoom(zoom);
+        const south = bounds.getSouth();
+        const west = bounds.getWest();
+        const north = bounds.getNorth();
+        const east = bounds.getEast();
         const fetchKey = [
           zoom,
-          bounds.getSouth().toFixed(5),
-          bounds.getWest().toFixed(5),
-          bounds.getNorth().toFixed(5),
-          bounds.getEast().toFixed(5),
+          south.toFixed(5),
+          west.toFixed(5),
+          north.toFixed(5),
+          east.toFixed(5),
         ].join(":");
 
         const now = Date.now();
+
+        const cachedSpots = readSpotsFromBoundsCache(
+          spotsBoundsCache,
+          fetchKey,
+          south,
+          west,
+          north,
+          east,
+          debug,
+        );
+        if (cachedSpots !== null) {
+          setSpots(cachedSpots);
+          lastFetchKeyRef.current = fetchKey;
+          lastFetchAtRef.current = now;
+          if (!autoOpenAppliedRef.current && focus.spotId) {
+            autoOpenAppliedRef.current = true;
+          }
+          return;
+        }
+
         const isSameAsLast = fetchKey === lastFetchKeyRef.current;
         const tooSoon = now - lastFetchAtRef.current < 700;
         if (isSameAsLast && tooSoon) {
@@ -290,7 +313,7 @@ const MapViewClient = forwardRef<
         setLoading(true);
 
         const params = new URLSearchParams({
-          bounds: `${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()}`,
+          bounds: `${south},${west},${north},${east}`,
           zoom: String(zoom),
         });
 
@@ -310,15 +333,18 @@ const MapViewClient = forwardRef<
           console.log("[spots] fetched", {
             zoom,
             count: payload.spots?.length ?? 0,
-            bounds: {
-              south: bounds.getSouth(),
-              west: bounds.getWest(),
-              north: bounds.getNorth(),
-              east: bounds.getEast(),
-            },
+            bounds: { south, west, north, east },
           });
         }
         setSpots(payload.spots);
+        writeSpotsBoundsCache(spotsBoundsCache, {
+          fetchKey,
+          south,
+          west,
+          north,
+          east,
+          spots: payload.spots,
+        });
         lastFetchKeyRef.current = fetchKey;
 
         // NOTE:
@@ -400,25 +426,40 @@ const MapViewClient = forwardRef<
 
       const markerClusterGroup = L.markerClusterGroup({
         showCoverageOnHover: false,
-        // 県レベル(=12)以上では完全に個別ピン表示にする。
-        disableClusteringAtZoom: 12,
-        // クラスタ判定距離(px)。狭めるほど孤立ピンが個別表示されやすい。
-        maxClusterRadius: 24,
-        spiderfyOnMaxZoom: true,
+        // プラグイン既定の「クリックで範囲ズーム」は無効化（自前の clusterclick でギャラリーへ）
+        zoomToBoundsOnClick: false,
+        // 画面外判定でクラスタが消えるのを防ぐ（重なり付近で見えなくなるケースの抑止）
+        removeOutsideVisibleBounds: false,
+        // 全ズームでピクセル近傍のマーカーをクラスタ化（重なり・近接はまとめ、離れると個別表示）
+        maxClusterRadius: 56,
+        spiderfyOnMaxZoom: false,
       });
-      // Cluster should zoom/spiderfy, not navigate to gallery (prevents /gallery/cluster:...).
       markerClusterGroup.on("clusterclick", (e) => {
-        const m = mapRef.current;
-        if (!m) return;
-        const target = e?.layer as unknown as { zoomToBounds?: () => void; spiderfy?: () => void } | undefined;
-        if (target?.zoomToBounds) target.zoomToBounds();
-        else if (target?.spiderfy) target.spiderfy();
+        const cluster = e.layer as L.MarkerCluster;
+        const children = cluster.getAllChildMarkers?.() ?? [];
+        const ids = [
+          ...new Set(
+            children
+              .map((m) => (m.options as { spotId?: string }).spotId)
+              .filter((id): id is string => Boolean(id)),
+          ),
+        ];
+        if (ids.length >= 2) {
+          const galleryId = `cluster:spots~${ids.join("~")}`;
+          router.push(`/gallery/${encodeURIComponent(galleryId)}`);
+          return;
+        }
+        if (ids.length === 1) {
+          router.push(`/gallery/${ids[0]}`);
+          return;
+        }
+        cluster.zoomToBounds?.();
       });
       clusterRef.current = markerClusterGroup;
       map.addLayer(markerClusterGroup);
       void fetchSpots(map);
     },
-    [fetchSpots, focus.lat, focus.lng, focus.zoom, debug, initialCenter, initialZoom, persistedView],
+    [fetchSpots, focus.lat, focus.lng, focus.zoom, debug, initialCenter, initialZoom, persistedView, router],
   );
 
   useEffect(() => {
@@ -532,7 +573,7 @@ const MapViewClient = forwardRef<
   }, [currentZoom]);
 
   return (
-    <section className="relative rounded-lg border">
+    <section className="leaflet-viewport-below-header relative rounded-lg border">
       {showInternalControls ? (
         <div className="absolute top-3 right-3 z-500 rounded-md bg-surface/95 px-3 py-1 text-xs text-on-surface shadow">
           表示モード: {modeLabel} {loading ? "(更新中)" : ""}
@@ -584,6 +625,17 @@ const MapViewClient = forwardRef<
           <ModeSync onZoom={onZoomChanged} />
           <MapEventBridge onBoundsChange={fetchSpots} onViewChange={onViewChange} />
         </MapContainer>
+      </div>
+
+      {/* Leaflet ズームの直下に倍率（ズームレベル）を表示。位置は --map-header-offset + コントロール高に合わせる */}
+      <div
+        className="pointer-events-none absolute left-[10px] z-[1000] min-w-[3.25rem] rounded-md border border-outline-variant/70 bg-surface/95 px-2 py-1.5 text-center shadow-md backdrop-blur-sm bg-black"
+        style={{ top: "calc(var(--map-header-offset) + 3.85rem)" }}
+      >
+        <div className="text-[10px] font-semibold uppercase leading-none tracking-wide text-on-surface-variant">倍率</div>
+        <div className="text-headline-md font-headline-md tabular-nums leading-tight text-on-surface">
+          {Number.isFinite(currentZoom) ? currentZoom : "—"}
+        </div>
       </div>
     </section>
   );

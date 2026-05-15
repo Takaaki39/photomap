@@ -138,7 +138,7 @@ export async function GET(request: Request) {
     })
   );
 
-  // NOTE: We rely on Leaflet.markercluster on the client for clustering.
-  // Returning synthetic `cluster:*` ids breaks gallery routing (expects UUID spot ids).
+  // NOTE: クライアントの Leaflet.markercluster でピクセル近傍をまとめる。
+  // まとめギャラリーは `cluster:spots~` + UUID 列（クライアント生成）で扱う。
   return NextResponse.json({ zoom, spots });
 }

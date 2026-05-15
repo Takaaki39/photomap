@@ -24,10 +24,13 @@ export function GalleryGrid({
 
   return (
     <>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-gutter">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 md:gap-5 lg:grid-cols-4">
         {photos.map((photo) => {
         const isSelected = selected.has(photo.id);
-        const cardRing = selectMode && isSelected ? "ring-2 ring-primary shadow-[0px_4px_12px_rgba(0,0,0,0.1)]" : "";
+        const cardRing =
+          selectMode && isSelected
+            ? "ring-2 ring-primary ring-offset-2 ring-offset-background border-primary/30"
+            : "";
         return (
           <div
             key={photo.id}
@@ -41,24 +44,28 @@ export function GalleryGrid({
               if (selectMode) onToggleSelected(photo.id);
               else setActiveId(photo.id);
             }}
-            className={`group relative text-left bg-surface-container-lowest rounded-xl overflow-hidden shadow-[0px_2px_4px_rgba(0,0,0,0.05)] hover:shadow-[0px_4px_12px_rgba(0,0,0,0.1)] transition-all ${cardRing}`}
+            className={`group relative flex flex-col text-left overflow-hidden rounded-2xl border border-outline-variant/80 bg-surface-container-lowest shadow-[0_1px_2px_rgba(24,28,32,0.06),0_6px_20px_rgba(24,28,32,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:border-outline/60 hover:shadow-[0_2px_6px_rgba(24,28,32,0.08),0_12px_28px_rgba(24,28,32,0.12)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.35),0_8px_24px_rgba(0,0,0,0.45)] dark:hover:shadow-[0_4px_12px_rgba(0,0,0,0.5),0_16px_40px_rgba(0,0,0,0.55)] ${cardRing}`}
             role="button"
             tabIndex={0}
           >
-            <div className="aspect-video w-full bg-surface-container-highest">
+            <div className="relative aspect-video w-full overflow-hidden bg-surface-container-high">
               {photo.image_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img alt="" className="w-full h-full object-cover" src={photo.image_url} />
+                <img
+                  alt=""
+                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                  src={photo.image_url}
+                />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-label-sm font-label-sm text-outline">
-                  No image
+                  画像なし
                 </div>
               )}
             </div>
-            <div className="p-3">
-              <div className="flex items-center gap-1 text-primary mb-1">
+            <div className="border-t border-outline-variant/50 bg-surface-container-lowest p-3">
+              <div className="mb-1 flex items-center gap-1 text-primary">
                 <span className="material-symbols-outlined text-[14px]">location_on</span>
-                <span className="text-label-sm font-label-sm">{spot?.name ?? "Spot"}</span>
+                <span className="text-label-sm font-label-sm">{spot?.name ?? "スポット"}</span>
               </div>
               <p className="text-label-sm font-label-sm text-outline">{new Date(photo.created_at).toLocaleDateString("ja-JP")}</p>
             </div>
@@ -70,10 +77,17 @@ export function GalleryGrid({
                   e.stopPropagation();
                   onDeletePhoto(photo.id);
                 }}
-                className="absolute top-2 left-2 rounded-full bg-surface/85 backdrop-blur-md p-1 shadow hover:bg-surface transition-colors"
+                className="absolute top-2 left-2 z-10 rounded-full border border-outline-variant/60 bg-surface-container-lowest/95 p-1 shadow-md backdrop-blur-md hover:bg-surface-container-lowest transition-colors"
                 aria-label="削除"
               >
-                <span className="material-symbols-outlined text-on-surface-variant">delete</span>
+                <img
+                  src="/icons/delete_32dp.svg"
+                  alt=""
+                  width={20}
+                  height={20}
+                  className="block size-5"
+                  draggable={false}
+                />
               </button>
             ) : null}
 
@@ -81,16 +95,25 @@ export function GalleryGrid({
               <div className="absolute top-2 right-2 transition-opacity">
                 {isSelected ? (
                   <div className="bg-primary p-1 rounded-full shadow-sm">
-                    <span
-                      className="material-symbols-outlined text-on-primary"
-                      style={{ fontVariationSettings: "'FILL' 1" } as React.CSSProperties}
-                    >
-                      check_circle
-                    </span>
+                    <img
+                      src="/icons/check_circle_32dp.svg"
+                      alt=""
+                      width={20}
+                      height={20}
+                      className="block size-5 brightness-0 invert"
+                      draggable={false}
+                    />
                   </div>
                 ) : (
                   <div className="bg-surface/80 backdrop-blur-md p-1 rounded-full shadow-sm">
-                    <span className="material-symbols-outlined text-on-surface-variant">radio_button_unchecked</span>
+                    <img
+                      src="/icons/radio_button_unchecked_32dp.svg"
+                      alt=""
+                      width={20}
+                      height={20}
+                      className="block size-5"
+                      draggable={false}
+                    />
                   </div>
                 )}
               </div>

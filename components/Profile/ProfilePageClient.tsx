@@ -5,6 +5,7 @@ import { ProfileTopNav } from "@/components/Profile/ProfileTopNav";
 import { ProfileBottomNavMobile } from "@/components/Profile/ProfileBottomNavMobile";
 import { PhotoLightbox } from "@/components/Photo/PhotoLightbox";
 import type { MyPhoto } from "@/components/Me/types";
+import { clearSpotsBoundsCache } from "@/lib/spotsBoundsCache";
 
 export function ProfilePageClient() {
   const [photos, setPhotos] = useState<MyPhoto[]>([]);
@@ -65,6 +66,7 @@ export function ProfilePageClient() {
     }
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
     if (activePhotoId === photoId) setActivePhotoId(null);
+    clearSpotsBoundsCache();
   };
 
   return (
@@ -192,7 +194,14 @@ export function ProfilePageClient() {
                     className="absolute top-2 left-2 z-10 rounded-full bg-surface/85 backdrop-blur-md p-1 shadow hover:bg-surface transition-colors"
                     aria-label="削除"
                   >
-                    <span className="material-symbols-outlined text-on-surface-variant">delete</span>
+                    <img
+                      src="/icons/delete_32dp.svg"
+                      alt=""
+                      width={20}
+                      height={20}
+                      className="block size-5"
+                      draggable={false}
+                    />
                   </button>
 
                   {p.image_url ? (

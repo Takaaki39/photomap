@@ -13,7 +13,7 @@ export function HomeBottomRightControls({
         type="button"
         aria-label="Current location"
         onClick={onLocate}
-        className="w-16 h-16 bg-surface-container-lowest/95 dark:bg-surface-container/95 backdrop-blur-md shadow-lg rounded-full flex items-center justify-center active:scale-90 transition-transform border border-outline-variant/60 dark:border-outline/40"
+        className="w-16 h-16 bg-surface-container-lowest/95 dark:bg-surface-container/99 backdrop-blur-md shadow-lg rounded-full flex items-center justify-center active:scale-90 transition-transform border border-outline-variant/60 dark:border-outline/40"
       >
         <img
           src="/icons/my_location_48dp_E3E3E3_FILL0_wght400_GRAD0_opsz48.svg"
@@ -28,7 +28,7 @@ export function HomeBottomRightControls({
         type="button"
         aria-label="Upload"
         onClick={onUpload}
-        className="w-16 h-16 bg-secondary-container text-on-secondary-container shadow-2xl rounded-full flex items-center justify-center hover:bg-secondary transition-colors active:scale-95"
+        className="w-16 h-16 bg-surface-container-lowest/95 dark:bg-surface-container/99 backdrop-blur-md shadow-lg rounded-full flex items-center justify-center active:scale-90 transition-transform border border-outline-variant/60 dark:border-outline/40"
       >
         <img
           src="/icons/add_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"

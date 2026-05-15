@@ -5,6 +5,7 @@ import { TopNav } from "@/components/Nav/TopNav";
 import { BottomNav } from "@/components/Nav/BottomNav";
 import { GalleryGrid } from "@/components/Gallery/GalleryGrid";
 import type { GalleryPhoto, GallerySpot } from "@/components/Gallery/types";
+import { clearSpotsBoundsCache } from "@/lib/spotsBoundsCache";
 
 function cellSizeFromZoom(zoom: number) {
   return zoom <= 3 ? 8 : zoom <= 6 ? 3 : zoom <= 9 ? 1 : zoom <= 12 ? 0.3 : zoom <= 15 ? 0.08 : 0;
@@ -87,6 +88,7 @@ export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {
     }
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
     setTotal((prev) => (typeof prev === "number" ? Math.max(0, prev - 1) : prev));
+    clearSpotsBoundsCache();
   };
 
   return (

@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { extractGpsFromExif } from "@/lib/exif";
-import { UploadDonePanel } from "@/components/Upload/UploadDonePanel";
+import { clearSpotsBoundsCache } from "@/lib/spotsBoundsCache";
+import { UploadResultModal } from "@/components/Upload/UploadResultModal";
 import { UploadFileDrop } from "@/components/Upload/UploadFileDrop";
 import { UploadMapCard } from "@/components/Upload/UploadMapCard";
 import { UploadPreview } from "@/components/Upload/UploadPreview";
@@ -91,11 +92,16 @@ export default function UploadPage() {
   const onPickFiles = async (picked: File[]) => {
     setError(null);
     if (picked.length === 0) return;
+    const keepOnPickFailure = stage === "review" && files.length > 0;
+
     for (const f of picked) {
       const v = validateFile(f);
       if (v) {
-        resetAll();
-        setError(v);
+        if (keepOnPickFailure) setError(v);
+        else {
+          resetAll();
+          setError(v);
+        }
         return;
       }
     }
@@ -114,8 +120,13 @@ export default function UploadPage() {
     }
 
     if (withExif.length === 0) {
-      resetAll();
-      setError("位置情報（EXIF）がある写真が見つかりませんでした。位置情報付きの写真を選択してください。");
+      const msg =
+        "位置情報（EXIF）がある写真が見つかりませんでした。位置情報付きの写真を選択してください。";
+      if (keepOnPickFailure) setError(msg);
+      else {
+        resetAll();
+        setError(msg);
+      }
       return;
     }
 
@@ -185,9 +196,10 @@ export default function UploadPage() {
   };
 
   const onSubmit = async () => {
+    if (stage === "uploading") return;
     if (files.length === 0) return;
     if (!canProceed) {
-      setError("位置情報が不足しています。GPS付き画像か、手動ピンを選択してください。");
+      setError("位置情報が不足しています。位置情報（EXIF）付きの写真を選んでください。");
       return;
     }
 
@@ -246,6 +258,7 @@ export default function UploadPage() {
         lat: Number.isFinite(resultLat) ? resultLat : undefined,
         lng: Number.isFinite(resultLng) ? resultLng : undefined,
       });
+      clearSpotsBoundsCache();
     }
 
     setUploadingIndex(null);
@@ -265,24 +278,27 @@ export default function UploadPage() {
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
           <section className="lg:col-span-7 xl:col-span-8">
+            <input
+              ref={inputRef}
+              type="file"
+              multiple
+              accept="image/jpeg,image/png,image/heic,image/heif,image/webp"
+              className="hidden"
+              onChange={async (e) => {
+                const list = Array.from(e.target.files ?? []);
+                e.target.value = "";
+                if (list.length > 0) await onPickFiles(list);
+              }}
+            />
             {stage === "select" ? (
               <div className="space-y-4">
                 <UploadFileDrop onDrop={onDrop} onPickClick={() => inputRef.current?.click()} />
-                <input
-                  ref={inputRef}
-                  type="file"
-                  multiple
-                  accept="image/jpeg,image/png,image/heic,image/heif,image/webp"
-                  className="hidden"
-                  onChange={async (e) => {
-                    const list = Array.from(e.target.files ?? []);
-                    if (list.length > 0) await onPickFiles(list);
-                  }}
-                />
               </div>
             ) : (
               <UploadPreview
                 previewUrl={previewUrl}
+                pickable={stage === "review"}
+                onRequestPick={() => inputRef.current?.click()}
                 fileLabel={
                   activeFile
                     ? `${activeFile.name} ・ ${formatBytes(activeFile.size)}（${activeIndex + 1}/${files.length}）`
@@ -296,13 +312,7 @@ export default function UploadPage() {
 
           <aside className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24">
             <div className="flex flex-col gap-4">
-              <UploadMapCard
-                gps={gps}
-                manualLocation={null}
-                onChange={() => {
-                  // Manual pin picking is disabled for auto-fill mode.
-                }}
-              />
+              <UploadMapCard gps={gps} manualLocation={null} />
 
               {stage === "review" && files.length > 1 ? (
                 <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-3 text-body-md font-body-md">
@@ -332,48 +342,87 @@ export default function UploadPage() {
                 </div>
               ) : null}
 
-              <button
-                type="button"
-                disabled={stage === "select" || stage === "uploading" || files.length === 0 || !canProceed}
-                onClick={onSubmit}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 py-4 text-headline-md font-headline-md text-on-primary shadow-[0px_8px_24px_rgba(0,0,0,0.15)] hover:bg-primary-container transition-colors active:scale-[0.99] disabled:opacity-60"
-              >
-                {stage === "uploading"
-                  ? `アップロード中... ${uploadingIndex != null ? `${uploadingIndex + 1}/${files.length}` : ""}（完了: ${uploadedCount}）`
-                  : files.length > 1
-                    ? `まとめてアップロード（${files.length}枚）`
-                    : "アップロードする"}
-              </button>
+              <div className="rounded-2xl border border-outline-variant/80 bg-surface-container-lowest p-3 shadow-[0_4px_24px_rgba(0,0,0,0.06)]">
+                <p className="mb-2 px-1 text-label-sm font-label-sm font-semibold uppercase tracking-wide text-on-surface-variant">
+                  投稿する
+                </p>
+                <button
+                  type="button"
+                  aria-busy={stage === "uploading" || undefined}
+                  disabled={stage === "select" || files.length === 0 || !canProceed}
+                  onClick={onSubmit}
+                  className="group relative flex w-full items-center gap-4 overflow-hidden rounded-xl px-4 py-4 text-left transition-all focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/35 focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-busy:pointer-events-none aria-busy:cursor-wait disabled:cursor-not-allowed disabled:border-2 disabled:border-dashed disabled:border-outline-variant disabled:bg-surface-container-high disabled:text-on-surface-variant disabled:shadow-none enabled:cursor-pointer enabled:border-2 enabled:border-white/30 enabled:bg-primary enabled:text-on-primary enabled:shadow-[0_12px_40px_-8px_rgba(0,88,189,0.45)] enabled:hover:-translate-y-0.5 enabled:hover:border-white/50 enabled:hover:bg-primary-container enabled:hover:shadow-[0_16px_48px_-6px_rgba(0,88,189,0.5)] enabled:active:translate-y-0 enabled:active:shadow-[0_8px_28px_-6px_rgba(0,88,189,0.4)] dark:enabled:shadow-[0_12px_40px_-8px_rgba(173,198,255,0.25)] dark:enabled:hover:shadow-[0_16px_48px_-6px_rgba(173,198,255,0.32)]"
+                >
+                  <span
+                    aria-hidden
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/15 text-on-primary transition-colors group-hover:bg-white/25 group-disabled:bg-surface-container group-disabled:text-on-surface-variant"
+                  >
+                    {stage === "uploading" ? (
+                      <span className="h-6 w-6 animate-spin rounded-full border-2 border-on-primary/30 border-t-on-primary" />
+                    ) : (
+                      <svg viewBox="0 0 24 24" className="h-7 w-7" fill="currentColor" aria-hidden>
+                        <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z" />
+                      </svg>
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-headline-md font-headline-md leading-tight">
+                      {stage === "uploading"
+                        ? `アップロード中… ${uploadingIndex != null ? `${uploadingIndex + 1}/${files.length}` : ""}（完了 ${uploadedCount}）`
+                        : files.length > 1
+                          ? `まとめて投稿する（${files.length}枚）`
+                          : "この内容でアップロード"}
+                    </span>
+                    <span className="mt-1 block text-label-md font-label-md opacity-90">
+                      {stage === "uploading"
+                        ? "完了までこの画面を閉じないでください"
+                        : stage === "select" || files.length === 0
+                          ? "写真を選ぶと有効になります"
+                          : "タップでスポットに写真を追加します"}
+                    </span>
+                  </span>
+                  {stage !== "uploading" && files.length > 0 && canProceed ? (
+                    <span
+                      aria-hidden
+                      className="hidden shrink-0 rounded-full bg-white/20 px-3 py-1.5 text-label-sm font-label-sm text-on-primary sm:inline-block"
+                    >
+                      {files.length}枚
+                    </span>
+                  ) : null}
+                </button>
+              </div>
 
               <p className="px-4 text-center text-label-sm font-label-sm text-outline">
                 投稿すると、位置情報を含むデータの取り扱いに同意したものとみなされます。
               </p>
-
-              {stage === "done" && result ? (
-                <UploadDonePanel
-                  result={result}
-                  onGoMap={() => {
-                    const sp = result?.spot_id;
-                    const lat = result?.lat;
-                    const lng = result?.lng;
-                    if (sp && typeof lat === "number" && typeof lng === "number") {
-                      const q = new URLSearchParams({
-                        spot_id: sp,
-                        lat: String(lat),
-                        lng: String(lng),
-                        zoom: "16",
-                      });
-                      router.push(`/?${q.toString()}`);
-                      return;
-                    }
-                    router.push("/");
-                  }}
-                />
-              ) : null}
             </div>
           </aside>
         </div>
       </main>
+
+      <UploadResultModal
+        open={stage === "uploading" || stage === "done"}
+        phase={stage === "done" ? "done" : "loading"}
+        filesTotal={files.length}
+        uploadingIndex={uploadingIndex}
+        uploadedCount={uploadedCount}
+        onGoMap={() => {
+          const sp = result?.spot_id;
+          const lat = result?.lat;
+          const lng = result?.lng;
+          if (sp && typeof lat === "number" && typeof lng === "number") {
+            const q = new URLSearchParams({
+              spot_id: sp,
+              lat: String(lat),
+              lng: String(lng),
+              zoom: "16",
+            });
+            router.push(`/?${q.toString()}`);
+            return;
+          }
+          router.push("/");
+        }}
+      />
 
       <BottomNav active="upload" />
     </div>

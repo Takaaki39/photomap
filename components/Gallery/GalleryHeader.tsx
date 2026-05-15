@@ -14,11 +14,11 @@ export function GalleryHeader({
   onToggleSelectMode: () => void;
 }) {
   return (
-    <div className="flex flex-col md:flex-row md:items-center justify-between mb-lg gap-4">
+    <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
       <div>
-        <h1 className="text-display font-display text-on-surface">{spot?.name ?? "Gallery"}</h1>
+        <h1 className="text-display font-display text-on-surface">{spot?.name ?? "ギャラリー"}</h1>
         <p className="text-body-md font-body-md text-on-surface-variant">
-          {typeof total === "number" ? `${total} items` : `${count} items`} captured here
+          ここで撮影された写真が{typeof total === "number" ? total : count}件
         </p>
         {spot?.address ? <p className="mt-1 text-body-md font-body-md text-outline">{spot.address}</p> : null}
       </div>
@@ -28,15 +28,29 @@ export function GalleryHeader({
           onClick={onToggleSelectMode}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container-high text-on-surface-variant text-label-lg font-label-lg hover:bg-surface-variant transition-colors"
         >
-          <span className="material-symbols-outlined text-[18px]">check_circle</span>
-          Select Items
+          <img
+            src="/icons/check_circle_32dp.svg"
+            alt=""
+            width={18}
+            height={18}
+            className="block size-[18px] shrink-0"
+            draggable={false}
+          />
+          写真を選択
         </button>
         <button
           type="button"
           className="p-2 rounded-lg bg-primary text-on-primary hover:bg-primary-container transition-colors shadow-sm"
-          aria-label="Filter"
+          aria-label="フィルター"
         >
-          <span className="material-symbols-outlined">tune</span>
+          <img
+            src="/icons/tune_32dp.svg"
+            alt=""
+            width={24}
+            height={24}
+            className="block size-6"
+            draggable={false}
+          />
         </button>
       </div>
     </div>

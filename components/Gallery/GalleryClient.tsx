@@ -2,15 +2,20 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { GalleryFab } from "./GalleryFab";
-import { GalleryFilterChips } from "./GalleryFilterChips";
 import { GalleryGrid } from "./GalleryGrid";
 import { GalleryHeader } from "./GalleryHeader";
 import { GallerySelectionBar } from "./GallerySelectionBar";
 import { TopNav } from "@/components/Nav/TopNav";
 import type { GalleryPhoto, GallerySpot } from "./types";
 import { BottomNav } from "@/components/Nav/BottomNav";
+import { clearSpotsBoundsCache } from "@/lib/spotsBoundsCache";
+import { MergedSpotsGalleryClient } from "@/components/Gallery/MergedSpotsGalleryClient";
+import { isMergedSpotsClusterGalleryId, normalizeGalleryRouteId } from "@/lib/galleryRouteId";
 
 export function GalleryClient({ spotId }: { spotId: string }) {
+  const id = useMemo(() => normalizeGalleryRouteId(spotId), [spotId]);
+  const isMergedGallery = useMemo(() => isMergedSpotsClusterGalleryId(id), [id]);
+
   const [spot, setSpot] = useState<GallerySpot | null>(null);
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [total, setTotal] = useState<number | null>(null);
@@ -19,20 +24,21 @@ export function GalleryClient({ spotId }: { spotId: string }) {
   const [selectMode, setSelectMode] = useState(false);
 
   const isUuid = useMemo(() => {
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(spotId);
-  }, [spotId]);
+    if (isMergedGallery) return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+  }, [id, isMergedGallery]);
 
   const effectiveSpot = isUuid ? spot : null;
   const effectivePhotos = useMemo(() => (isUuid ? photos : []), [isUuid, photos]);
   const effectiveTotal = isUuid ? total : null;
-  const effectiveError = !isUuid ? "ギャラリーのIDが不正です（UUIDではありません）。" : error;
+  const effectiveError = !isUuid && !isMergedGallery ? "ギャラリーのIDが不正です（UUIDではありません）。" : error;
 
   useEffect(() => {
-    if (!isUuid) return;
+    if (!isUuid || isMergedGallery) return;
     (async () => {
       const [spotRes, photosRes] = await Promise.all([
-        fetch(`/api/spots/${spotId}`, { cache: "no-store" }),
-        fetch(`/api/spots/${spotId}/photos?limit=100`, { cache: "no-store" }),
+        fetch(`/api/spots/${id}`, { cache: "no-store" }),
+        fetch(`/api/spots/${id}/photos?limit=100`, { cache: "no-store" }),
       ]);
 
       if (spotRes.ok) {
@@ -50,15 +56,19 @@ export function GalleryClient({ spotId }: { spotId: string }) {
       setTotal(typeof d.total === "number" ? d.total : null);
       setError(null);
     })();
-  }, [spotId, isUuid]);
+  }, [id, isUuid, isMergedGallery]);
+
+  if (isMergedGallery) {
+    return <MergedSpotsGalleryClient clusterId={id} />;
+  }
 
   const selectedCount = selected.size;
 
-  const toggleSelected = (id: string) => {
+  const toggleSelected = (entryId: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(entryId)) next.delete(entryId);
+      else next.add(entryId);
       return next;
     });
   };
@@ -77,6 +87,7 @@ export function GalleryClient({ spotId }: { spotId: string }) {
       next.delete(photoId);
       return next;
     });
+    clearSpotsBoundsCache();
   };
 
   return (
@@ -94,9 +105,9 @@ export function GalleryClient({ spotId }: { spotId: string }) {
           }}
         />
 
-        <GalleryFilterChips />
-
-        {effectiveError ? <p className="mb-md text-body-md font-body-md text-error">{effectiveError}</p> : null}
+        {effectiveError ? (
+          <p className="mb-6 text-body-md font-body-md text-error">{effectiveError}</p>
+        ) : null}
 
         <GalleryGrid
           photos={effectivePhotos}
@@ -120,7 +131,7 @@ export function GalleryClient({ spotId }: { spotId: string }) {
         />
       ) : null}
 
-      <BottomNav active="gallery" galleryHref={`/gallery/${spotId}`} />
+      <BottomNav active="gallery" galleryHref={`/gallery/${encodeURIComponent(id)}`} />
     </div>
   );
 }
