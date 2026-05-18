@@ -48,7 +48,7 @@ export function EditProfilePageClient() {
     setError(null);
     const res = await fetch("/api/me/profile", { cache: "no-store" });
     if (!res.ok) {
-      setError("Failed to load profile.");
+      setError("プロフィールの読み込みに失敗しました。");
       setLoading(false);
       return;
     }
@@ -79,12 +79,12 @@ export function EditProfilePageClient() {
   const onPickPhoto = (file: File | null) => {
     if (!file) return;
     if (file.size > AVATAR_MAX_BYTES) {
-      setError("Max file size is 2MB.");
+      setError("画像は2MB以下にしてください。");
       return;
     }
     const ok = ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(file.type);
     if (!ok) {
-      setError("JPG, GIF or PNG only.");
+      setError("JPG、GIF、PNG、WebP形式の画像を選んでください。");
       return;
     }
     setError(null);
@@ -109,7 +109,7 @@ export function EditProfilePageClient() {
     setSaving(false);
 
     if (!res.ok) {
-      setError(d.error ?? "Failed to save changes.");
+      setError(d.error ?? "保存に失敗しました。");
       return;
     }
 
@@ -129,18 +129,17 @@ export function EditProfilePageClient() {
       >
         <header className="mb-8">
           <h1 className="text-[32px] font-bold leading-tight tracking-tight text-[#111827] sm:text-[36px]">
-            Edit Profile
+            プロフィールを編集
           </h1>
           <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-[#6b7280]">
-            Update your personal details and location settings for your lens gallery.
+            表示名や活動場所など、ギャラリーに表示する情報を更新できます。
           </p>
         </header>
 
         {loading ? (
-          <p className="text-center text-[15px] text-[#6b7280]">Loading…</p>
+          <p className="text-center text-[15px] text-[#6b7280]">読み込み中…</p>
         ) : (
           <form onSubmit={onSubmit} className="space-y-4">
-            {/* Profile picture card */}
             <section className={cardClass}>
               <div className="flex flex-row items-center gap-6 sm:gap-8">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -159,29 +158,30 @@ export function EditProfilePageClient() {
                     onChange={(e) => onPickPhoto(e.target.files?.[0] ?? null)}
                   />
                   <button type="button" onClick={() => fileInputRef.current?.click()} className={btnPrimary}>
-                    Change Photo
+                    写真を変更
                   </button>
-                  <p className="mt-2 text-xs text-[#6b7280]">JPG, GIF or PNG. Max size 2MB</p>
+                  <p className="mt-2 text-xs text-[#6b7280]">JPG、GIF、PNG。最大2MB</p>
                 </div>
               </div>
             </section>
 
-            {/* Profile information card */}
             <section className={cardClass}>
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6">
                 <label className="block">
-                  <span className={labelClass}>Full Name</span>
+                  <span className={labelClass}>氏名</span>
                   <input
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     className={fieldClass}
-                    placeholder="Alexander Thorne"
+                    placeholder="山田 太郎"
                     autoComplete="name"
                   />
                 </label>
                 <label className="block">
-                  <span className={labelClass}>Username</span>
-                  <div className={`${fieldClass} flex items-center gap-0.5 px-4 py-0 focus-within:ring-2 focus-within:ring-[#2563eb]/25`}>
+                  <span className={labelClass}>ユーザー名</span>
+                  <div
+                    className={`${fieldClass} flex items-center gap-0.5 px-4 py-0 focus-within:ring-2 focus-within:ring-[#2563eb]/25`}
+                  >
                     <span className="shrink-0 text-[15px] text-[#6b7280]">@&nbsp;</span>
                     <input
                       value={username}
@@ -189,7 +189,7 @@ export function EditProfilePageClient() {
                         setUsername(e.target.value.replace(/\s/g, "").replace(/^@+/, ""))
                       }
                       className="min-w-0 flex-1 border-0 bg-transparent py-3 text-[15px] text-[#111827] outline-none placeholder:text-[#9ca3af]"
-                      placeholder="alex_thorne"
+                      placeholder="username"
                       autoComplete="username"
                     />
                   </div>
@@ -197,33 +197,37 @@ export function EditProfilePageClient() {
               </div>
 
               <label className="mt-5 block sm:mt-6">
-                <span className={labelClass}>Short Bio</span>
+                <span className={labelClass}>自己紹介</span>
                 <textarea
                   value={bio}
                   onChange={(e) => setBio(e.target.value.slice(0, BIO_MAX))}
                   rows={5}
                   className={`${fieldClass} resize-none`}
-                  placeholder="Exploring the hidden architectural gems..."
+                  placeholder="あなたの写真や旅について…"
                 />
                 <p className="mt-1.5 text-right text-xs text-[#6b7280]">
-                  {bioCount} / {BIO_MAX} characters
+                  {bioCount} / {BIO_MAX} 文字
                 </p>
               </label>
 
               <label className="mt-5 block sm:mt-6">
-                <span className={labelClass}>Primary Location</span>
-                <div className={`${fieldClass} flex items-center gap-2 focus-within:ring-2 focus-within:ring-[#2563eb]/25`}>
-                  <span
-                    className="material-symbols-outlined shrink-0 text-[20px] text-[#6b7280]"
+                <span className={labelClass}>主な活動場所</span>
+                <div
+                  className={`${fieldClass} flex items-center gap-2 focus-within:ring-2 focus-within:ring-[#2563eb]/25`}
+                >
+                  <img
+                    src="/icons/my_location_48dp_E3E3E3_FILL0_wght400_GRAD0_opsz48.svg"
+                    alt=""
+                    width={20}
+                    height={20}
+                    className="block shrink-0 brightness-[0.45]"
                     aria-hidden
-                  >
-                    location_on
-                  </span>
+                  />
                   <input
                     value={primaryLocation}
                     onChange={(e) => setPrimaryLocation(e.target.value)}
                     className="min-w-0 flex-1 border-0 bg-transparent py-0 text-[15px] text-[#111827] outline-none placeholder:text-[#9ca3af]"
-                    placeholder="Stockholm, Sweden"
+                    placeholder="東京都, 日本"
                   />
                 </div>
               </label>
@@ -240,10 +244,10 @@ export function EditProfilePageClient() {
                 href="/profile"
                 className="text-sm font-semibold text-[#374151] transition-colors hover:text-[#111827]"
               >
-                Cancel
+                キャンセル
               </Link>
               <button type="submit" disabled={saving} className={`${btnPrimary} px-6`}>
-                {saving ? "Saving…" : "Save Changes"}
+                {saving ? "保存中…" : "変更を保存"}
               </button>
             </div>
           </form>

@@ -18,26 +18,26 @@ export function ProfilePageTopNav() {
 
       <nav
         className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-6 md:flex"
-        aria-label="Main"
+        aria-label="メインナビゲーション"
       >
         <Link href="/" className={navLink}>
-          Map
+          マップ
         </Link>
         <Link href="/" className={navLink}>
-          Gallery
+          ギャラリー
         </Link>
         <Link href="/upload" className={navLink}>
-          Upload
+          アップロード
         </Link>
         <span className={navLinkActive} aria-current="page">
-          Profile
+          プロフィール
         </span>
       </nav>
 
       <Link
         href="/profile"
         className="inline-flex items-center justify-center rounded-full p-1 hover:bg-[#f3f4f6]"
-        aria-label="Profile"
+        aria-label="プロフィール"
       >
         <AccountCircleNavIcon />
       </Link>

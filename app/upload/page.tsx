@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { extractGpsFromExif } from "@/lib/exif";
 import { refreshAllSpotsSnapshot } from "@/lib/spotsBoundsCache";
+import { uploadPhotoViaStorage } from "@/lib/uploadPhotoClient";
 import { UploadResultModal } from "@/components/Upload/UploadResultModal";
 import { UploadFileDrop } from "@/components/Upload/UploadFileDrop";
 import { UploadMapCard } from "@/components/Upload/UploadMapCard";
@@ -213,51 +214,29 @@ export default function UploadPage() {
       const file = files[i] as File;
       setUploadingIndex(i);
 
-      const fd = new FormData();
-      fd.set("file", file);
-      fd.set("is_public", String(isPublic));
-      fd.set("place_name", placeName);
-      fd.set("require_exif_gps", "true");
-      if (chosen) {
-        fd.set("client_lat", String(chosen.lat));
-        fd.set("client_lng", String(chosen.lng));
-      }
+      try {
+        const payload = await uploadPhotoViaStorage({
+          file,
+          lat: chosen!.lat,
+          lng: chosen!.lng,
+          placeName,
+          isPublic,
+        });
 
-      const res = await fetch("/api/photos/upload", { method: "POST", body: fd });
-      const raw = await res.text();
-      const payload = (() => {
-        if (!raw) return {} as Record<string, unknown>;
-        try {
-          return JSON.parse(raw) as Record<string, unknown>;
-        } catch {
-          return { error: raw } as Record<string, unknown>;
-        }
-      })();
-
-      const errorMessage =
-        (typeof payload.error === "string" && payload.error) ||
-        (typeof payload.message === "string" && payload.message) ||
-        (raw ? "アップロードに失敗しました。" : "アップロードに失敗しました（サーバー応答が空です）。");
-
-      if (!res.ok) {
+        setUploadedCount((c) => c + 1);
+        setResult({
+          spot_id: payload.spot_id,
+          photo_id: payload.photo_id,
+          lat: payload.lat,
+          lng: payload.lng,
+        });
+      } catch (e) {
         setStage("review");
         setUploadingIndex(null);
-        setError(`${i + 1}枚目で失敗: ${errorMessage}`);
+        const msg = e instanceof Error ? e.message : "アップロードに失敗しました。";
+        setError(`${i + 1}枚目で失敗: ${msg}`);
         return;
       }
-
-      const spotId = typeof payload.spot_id === "string" ? payload.spot_id : "";
-      const photoId = typeof payload.photo_id === "string" ? payload.photo_id : "";
-      const resultLat = typeof payload.lat === "number" ? payload.lat : Number(payload.lat);
-      const resultLng = typeof payload.lng === "number" ? payload.lng : Number(payload.lng);
-
-      setUploadedCount((c) => c + 1);
-      setResult({
-        spot_id: spotId,
-        photo_id: photoId,
-        lat: Number.isFinite(resultLat) ? resultLat : undefined,
-        lng: Number.isFinite(resultLng) ? resultLng : undefined,
-      });
     }
 
     await refreshAllSpotsSnapshot();

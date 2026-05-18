@@ -54,15 +54,15 @@ export function BottomNav({
 }) {
   return (
     <nav className="fixed bottom-0 left-0 z-50 flex h-[72px] w-full items-center justify-around border-t border-[#e5e7eb] bg-white pb-safe">
-      <NavItem active={active === "map"} href="/" label="Map" icon={<MapNavIcon />} />
+      <NavItem active={active === "map"} href="/" label="マップ" icon={<MapNavIcon />} />
       <NavItem
         active={active === "gallery"}
         href={galleryHref ?? "/"}
-        label="Gallery"
+        label="ギャラリー"
         icon={<PhotoPrintsNavIcon />}
       />
-      <NavItem active={active === "upload"} href="/upload" label="Upload" icon={<AddCircleNavIcon />} />
-      <NavItem active={active === "profile"} href="/profile" label="Profile" icon={<PersonNavIcon />} />
+      <NavItem active={active === "upload"} href="/upload" label="アップロード" icon={<AddCircleNavIcon />} />
+      <NavItem active={active === "profile"} href="/profile" label="プロフィール" icon={<PersonNavIcon />} />
     </nav>
   );
 }

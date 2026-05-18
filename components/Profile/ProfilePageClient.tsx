@@ -33,7 +33,7 @@ const AVATAR_FALLBACK =
 const SPOT_DOT_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"];
 
 const DEFAULT_BIO =
-  "Adventure photographer and geography enthusiast. Documenting the world's hidden gems one coordinate at a time.";
+  "旅と写真が好き。座標とともに、世界の隠れた魅力を記録しています。";
 
 function spotRegionLabel(name: string, fallback?: string | null) {
   const parts = name.split(",").map((s) => s.trim()).filter(Boolean);
@@ -42,7 +42,7 @@ function spotRegionLabel(name: string, fallback?: string | null) {
 }
 
 function spotDescription(name: string) {
-  return `Photos and memories captured around ${name}.`;
+  return `${name}周辺で撮影した写真と思い出。`;
 }
 
 export function ProfilePageClient() {
@@ -57,7 +57,7 @@ export function ProfilePageClient() {
     const res = await fetch("/api/me/photos", { cache: "no-store" });
     if (!res.ok) {
       const d = await res.json();
-      setError(d.error ?? "Failed to load photos.");
+      setError(d.error ?? "写真の読み込みに失敗しました。");
       return;
     }
     setError(null);
@@ -80,7 +80,7 @@ export function ProfilePageClient() {
     void fetchProfile();
   }, [fetchPhotos, fetchProfile]);
 
-  const userName = profile?.display_name ?? "User";
+  const userName = profile?.display_name ?? "ユーザー";
   const bioText = profile?.bio?.trim() || DEFAULT_BIO;
   const memberSince = profile?.member_since
     ? new Date(profile.member_since).getFullYear().toString()
@@ -114,7 +114,7 @@ export function ProfilePageClient() {
         const sorted = [...spotPhotos].sort(
           (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
         );
-        const name = sorted[0]?.spot_name || "Unnamed spot";
+        const name = sorted[0]?.spot_name || "名称未設定";
         return {
           spotKey,
           name,
@@ -132,11 +132,11 @@ export function ProfilePageClient() {
   );
 
   const deletePhoto = async (photoId: string) => {
-    if (!confirm("Delete this photo? (Removed from cloud storage too.)")) return;
+    if (!confirm("この写真を削除しますか？（クラウド上の画像も削除されます）")) return;
     const res = await fetch(`/api/photos/${photoId}`, { method: "DELETE" });
     if (!res.ok) {
       const text = await res.text();
-      setError(text || "Delete failed.");
+      setError(text || "削除に失敗しました。");
       return;
     }
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
@@ -194,7 +194,7 @@ export function ProfilePageClient() {
                     <path d="M12 20h9" />
                     <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
                   </svg>
-                  Edit Profile
+                  プロフィールを編集
                 </Link>
               </div>
               <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-[#6b7280]">{bioText}</p>
@@ -203,16 +203,16 @@ export function ProfilePageClient() {
 
           <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
             {[
-              { value: totalPhotos, label: "Total Photos" },
-              { value: placesVisited, label: "Places Visited" },
-              { value: memberSince, label: "Member Since" },
+              { value: totalPhotos, label: "写真数" },
+              { value: placesVisited, label: "訪れた場所" },
+              { value: memberSince, label: "登録年" },
             ].map((stat) => (
               <div
                 key={stat.label}
                 className="flex flex-col items-center justify-center rounded-xl border border-[#e5e7eb]/60 bg-white px-6 py-6 text-center shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
               >
                 <span className="text-[32px] font-bold leading-none text-[#2563eb]">{stat.value}</span>
-                <span className="mt-2 text-xs font-medium uppercase tracking-wide text-[#9ca3af]">
+                <span className="mt-2 text-xs font-medium text-[#9ca3af]">
                   {stat.label}
                 </span>
               </div>
@@ -221,15 +221,15 @@ export function ProfilePageClient() {
         </section>
 
         {/* Tabs */}
-        <nav className="flex border-b border-[#e5e7eb] px-4 sm:px-6 md:px-10" aria-label="Profile sections">
+        <nav className="flex border-b border-[#e5e7eb] px-4 sm:px-6 md:px-10" aria-label="プロフィールのセクション">
           <button type="button" onClick={() => setTab("gallery")} className={tabClass("gallery")}>
-            Gallery
+            ギャラリー
           </button>
           <button type="button" onClick={() => setTab("favorites")} className={tabClass("favorites")}>
-            Favorites
+            お気に入り
           </button>
           <button type="button" onClick={() => setTab("maps")} className={tabClass("maps")}>
-            Maps
+            マップ
           </button>
         </nav>
 
@@ -242,21 +242,21 @@ export function ProfilePageClient() {
 
           {showMaps ? (
             <section className="py-12 text-center">
-              <p className="text-[15px] text-[#6b7280]">View your photo pins on the map.</p>
+              <p className="text-[15px] text-[#6b7280]">地図で写真のピンを確認できます。</p>
               <Link
                 href="/"
                 className="mt-4 inline-flex rounded-xl bg-[#2563eb] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#1d4ed8]"
               >
-                Open Map
+                マップを開く
               </Link>
             </section>
           ) : null}
 
           {showRecent ? (
             <section className="mb-12 mt-8">
-              <h2 className="mb-6 text-xl font-bold text-[#111827]">Recent Uploads</h2>
+              <h2 className="mb-6 text-xl font-bold text-[#111827]">最近の投稿</h2>
               {photosNewestFirst.length === 0 ? (
-                <p className="text-[15px] text-[#6b7280]">No photos yet.</p>
+                <p className="text-[15px] text-[#6b7280]">まだ写真がありません。</p>
               ) : (
                 <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                   {photosNewestFirst.slice(0, 24).map((p) => (
@@ -279,7 +279,7 @@ export function ProfilePageClient() {
                           void deletePhoto(p.id);
                         }}
                         className="absolute left-2 top-2 z-10 rounded-full bg-white/90 p-1 shadow hover:bg-white"
-                        aria-label="Delete photo"
+                        aria-label="写真を削除"
                       >
                         <img
                           src="/icons/delete_32dp.svg"
@@ -295,16 +295,16 @@ export function ProfilePageClient() {
                         <img
                           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                           src={p.image_url}
-                          alt={p.spot_name || "Photo"}
+                          alt={p.spot_name || "写真"}
                           loading="lazy"
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center text-xs text-[#9ca3af]">
-                          No image
+                          画像なし
                         </div>
                       )}
                       <div className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/65 to-transparent p-3 pt-8">
-                        <p className="text-sm font-medium text-white">{p.spot_name || "Untitled"}</p>
+                        <p className="text-sm font-medium text-white">{p.spot_name || "名称未設定"}</p>
                       </div>
                     </div>
                   ))}
@@ -315,9 +315,9 @@ export function ProfilePageClient() {
 
           {showFavorites ? (
             <section className="mb-16 mt-8">
-              <h2 className="mb-6 text-xl font-bold text-[#111827]">Favorite Locations</h2>
+              <h2 className="mb-6 text-xl font-bold text-[#111827]">お気に入りの場所</h2>
               {favoriteSpots.length === 0 ? (
-                <p className="text-[15px] text-[#6b7280]">Upload photos to build your favorite spots.</p>
+                <p className="text-[15px] text-[#6b7280]">写真をアップロードすると、よく行く場所が表示されます。</p>
               ) : (
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                   {favoriteSpots.slice(0, tab === "favorites" ? 20 : 4).map((spot, index) => (
@@ -336,7 +336,7 @@ export function ProfilePageClient() {
                           />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center bg-[#e5e7eb] text-sm text-[#9ca3af]">
-                            No cover
+                            画像なし
                           </div>
                         )}
                       </div>
@@ -371,9 +371,7 @@ export function ProfilePageClient() {
                               />
                             ))}
                           </div>
-                          <span className="text-sm text-[#9ca3af]">
-                            {spot.photos.length} Photo{spot.photos.length === 1 ? "" : "s"}
-                          </span>
+                          <span className="text-sm text-[#9ca3af]">{spot.photos.length}枚</span>
                         </div>
                       </div>
                     </Link>
@@ -388,7 +386,7 @@ export function ProfilePageClient() {
       <PhotoLightbox
         open={Boolean(activePhoto?.image_url)}
         src={activePhoto?.image_url ?? null}
-        alt={activePhoto?.spot_name || "Photo"}
+        alt={activePhoto?.spot_name || "写真"}
         onClose={() => setActivePhotoId(null)}
       />
 

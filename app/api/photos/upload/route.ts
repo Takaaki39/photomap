@@ -72,6 +72,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "画像ファイルを指定してください" }, { status: 400 });
     }
 
+    // Vercel Serverless: リクエスト本体は約 4.5MB 上限（FUNCTION_PAYLOAD_TOO_LARGE）
+    const VERCEL_MAX_BODY = 4.5 * 1024 * 1024;
+    if (file.size > VERCEL_MAX_BODY) {
+      return NextResponse.json(
+        {
+          error:
+            "画像が大きすぎてサーバーに届きませんでした。アプリを最新に更新するか、Storage 直接アップロード（/api/photos/upload/prepare）を利用してください。",
+        },
+        { status: 413 },
+      );
+    }
+
     const manualLatRaw = formData.get("manual_lat");
     const manualLngRaw = formData.get("manual_lng");
     const manualLat = typeof manualLatRaw === "string" ? Number(manualLatRaw) : null;
