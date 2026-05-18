@@ -3,6 +3,9 @@
 import { useMemo, useState } from "react";
 import type { GalleryPhoto, GallerySpot } from "./types";
 import { PhotoLightbox } from "@/components/Photo/PhotoLightbox";
+import { formatGalleryPhotoDate } from "@/lib/galleryPhotoDate";
+import { GalleryLoadingOverlay } from "@/components/Gallery/GalleryLoadingOverlay";
+import { useGalleryFirstImageReady } from "@/components/Gallery/useGalleryFirstImageReady";
 
 export function GalleryGrid({
   photos,
@@ -11,6 +14,7 @@ export function GalleryGrid({
   selected,
   onToggleSelected,
   onDeletePhoto,
+  photosLoading = false,
 }: {
   photos: GalleryPhoto[];
   spot: GallerySpot | null;
@@ -18,9 +22,23 @@ export function GalleryGrid({
   selected: Set<string>;
   onToggleSelected: (id: string) => void;
   onDeletePhoto?: (photoId: string) => void;
+  photosLoading?: boolean;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const activePhoto = useMemo(() => photos.find((p) => p.id === activeId) ?? null, [activeId, photos]);
+  const { showGalleryLoading } = useGalleryFirstImageReady(photos, photosLoading);
+
+  if (showGalleryLoading) {
+    return <GalleryLoadingOverlay />;
+  }
+
+  if (photos.length === 0) {
+    return (
+      <p className="py-12 text-center text-body-md font-body-md text-on-surface-variant">
+        写真がありません
+      </p>
+    );
+  }
 
   return (
     <>
@@ -63,11 +81,13 @@ export function GalleryGrid({
               )}
             </div>
             <div className="border-t border-outline-variant/50 bg-surface-container-lowest p-3">
-              <div className="mb-1 flex items-center gap-1 text-primary">
-                <span className="material-symbols-outlined text-[14px]">location_on</span>
-                <span className="text-label-sm font-label-sm">{spot?.name ?? "スポット"}</span>
+              <div className="mb-1 flex min-w-0 items-center gap-1.5">
+                <span className="shrink-0 text-label-sm font-label-sm font-semibold text-primary">場所</span>
+                <span className="truncate text-label-sm font-label-sm text-on-surface">
+                  {spot?.name ?? "スポット"}
+                </span>
               </div>
-              <p className="text-label-sm font-label-sm text-outline">{new Date(photo.created_at).toLocaleDateString("ja-JP")}</p>
+              <p className="text-label-sm font-label-sm text-outline">{formatGalleryPhotoDate(photo)}</p>
             </div>
 
             {!selectMode && onDeletePhoto ? (

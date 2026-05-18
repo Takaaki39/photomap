@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { TopNav } from "@/components/Nav/TopNav";
 import { BottomNav } from "@/components/Nav/BottomNav";
+import { APP_MAIN_BOTTOM_CLASS, APP_MAIN_TOP_CLASS, TopNav } from "@/components/Nav/TopNav";
 import { GalleryGrid } from "@/components/Gallery/GalleryGrid";
 import type { GalleryPhoto, GallerySpot } from "@/components/Gallery/types";
-import { clearSpotsBoundsCache } from "@/lib/spotsBoundsCache";
+import { refreshAllSpotsSnapshot } from "@/lib/spotsBoundsCache";
 
 function cellSizeFromZoom(zoom: number) {
   return zoom <= 3 ? 8 : zoom <= 6 ? 3 : zoom <= 9 ? 1 : zoom <= 12 ? 0.3 : zoom <= 15 ? 0.08 : 0;
@@ -27,6 +27,7 @@ function readLastZoom(): number {
 export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [total, setTotal] = useState<number | null>(null);
+  const [photosLoading, setPhotosLoading] = useState(true);
 
   const parsed = useMemo(() => {
     const m = clusterId.match(/^cluster:(-?\d+):(-?\d+)$/);
@@ -53,10 +54,16 @@ export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {
   }, [clusterId, parsed]);
 
   useEffect(() => {
-    if (!parsed) return;
+    if (!parsed) {
+      setPhotosLoading(false);
+      return;
+    }
     const zoom = readLastZoom();
     const cellSize = cellSizeFromZoom(zoom);
-    if (cellSize === 0) return;
+    if (cellSize === 0) {
+      setPhotosLoading(false);
+      return;
+    }
 
     const south = parsed.latIndex * cellSize;
     const west = parsed.lngIndex * cellSize;
@@ -65,18 +72,31 @@ export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {
 
     const bounds = `${south},${west},${north},${east}`;
 
-    (async () => {
-      const res = await fetch(`/api/photos/in-bounds?bounds=${encodeURIComponent(bounds)}&limit=100`, { cache: "no-store" });
-      if (!res.ok) {
-        await res.text();
-        setPhotos([]);
-        setTotal(null);
-        return;
+    let cancelled = false;
+    setPhotosLoading(true);
+    setPhotos([]);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/photos/in-bounds?bounds=${encodeURIComponent(bounds)}&limit=100`, {
+          cache: "no-store",
+        });
+        if (cancelled) return;
+        if (!res.ok) {
+          await res.text();
+          setPhotos([]);
+          setTotal(null);
+          return;
+        }
+        const d = (await res.json()) as { photos?: GalleryPhoto[]; total?: number | null };
+        setPhotos(d.photos ?? []);
+        setTotal(typeof d.total === "number" ? d.total : null);
+      } finally {
+        if (!cancelled) setPhotosLoading(false);
       }
-      const d = (await res.json()) as { photos?: GalleryPhoto[]; total?: number | null };
-      setPhotos(d.photos ?? []);
-      setTotal(typeof d.total === "number" ? d.total : null);
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [clusterId, parsed]);
 
   const deletePhoto = async (photoId: string) => {
@@ -88,14 +108,16 @@ export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {
     }
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
     setTotal((prev) => (typeof prev === "number" ? Math.max(0, prev - 1) : prev));
-    clearSpotsBoundsCache();
+    void refreshAllSpotsSnapshot();
   };
 
   return (
-    <div className="bg-background text-on-surface min-h-screen pb-24">
+    <div className="min-h-screen bg-[#f3f4f6] text-[#111827] scheme-light">
       <TopNav />
 
-      <main className="pt-20 px-margin-mobile md:px-margin-desktop max-w-7xl mx-auto">
+      <main
+        className={`mx-auto max-w-7xl px-margin-mobile md:px-margin-desktop ${APP_MAIN_TOP_CLASS} ${APP_MAIN_BOTTOM_CLASS}`}
+      >
         <div className="mb-6">
           <h1 className="text-headline-lg font-headline-lg text-on-surface">ギャラリー</h1>
           <p className="text-body-md font-body-md text-on-surface-variant">
@@ -108,6 +130,7 @@ export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {
         <GalleryGrid
           photos={photos}
           spot={spot}
+          photosLoading={photosLoading}
           selectMode={false}
           selected={new Set()}
           onToggleSelected={() => {}}

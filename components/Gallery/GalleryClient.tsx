@@ -5,10 +5,10 @@ import { GalleryFab } from "./GalleryFab";
 import { GalleryGrid } from "./GalleryGrid";
 import { GalleryHeader } from "./GalleryHeader";
 import { GallerySelectionBar } from "./GallerySelectionBar";
-import { TopNav } from "@/components/Nav/TopNav";
-import type { GalleryPhoto, GallerySpot } from "./types";
 import { BottomNav } from "@/components/Nav/BottomNav";
-import { clearSpotsBoundsCache } from "@/lib/spotsBoundsCache";
+import { APP_MAIN_BOTTOM_CLASS, APP_MAIN_TOP_CLASS, TopNav } from "@/components/Nav/TopNav";
+import type { GalleryPhoto, GallerySpot } from "./types";
+import { refreshAllSpotsSnapshot } from "@/lib/spotsBoundsCache";
 import { MergedSpotsGalleryClient } from "@/components/Gallery/MergedSpotsGalleryClient";
 import { isMergedSpotsClusterGalleryId, normalizeGalleryRouteId } from "@/lib/galleryRouteId";
 
@@ -20,6 +20,7 @@ export function GalleryClient({ spotId }: { spotId: string }) {
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [total, setTotal] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [photosLoading, setPhotosLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [selectMode, setSelectMode] = useState(false);
 
@@ -34,28 +35,44 @@ export function GalleryClient({ spotId }: { spotId: string }) {
   const effectiveError = !isUuid && !isMergedGallery ? "ギャラリーのIDが不正です（UUIDではありません）。" : error;
 
   useEffect(() => {
-    if (!isUuid || isMergedGallery) return;
-    (async () => {
-      const [spotRes, photosRes] = await Promise.all([
-        fetch(`/api/spots/${id}`, { cache: "no-store" }),
-        fetch(`/api/spots/${id}/photos?limit=100`, { cache: "no-store" }),
-      ]);
+    if (isMergedGallery) return;
+    if (!isUuid) {
+      setPhotosLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setPhotosLoading(true);
+    setPhotos([]);
+    void (async () => {
+      try {
+        const [spotRes, photosRes] = await Promise.all([
+          fetch(`/api/spots/${id}`, { cache: "no-store" }),
+          fetch(`/api/spots/${id}/photos?limit=100`, { cache: "no-store" }),
+        ]);
 
-      if (spotRes.ok) {
-        const d = (await spotRes.json()) as { spot?: GallerySpot };
-        setSpot(d.spot ?? null);
-      }
+        if (cancelled) return;
 
-      if (!photosRes.ok) {
-        const text = await photosRes.text();
-        setError(text || "写真の取得に失敗しました。");
-        return;
+        if (spotRes.ok) {
+          const d = (await spotRes.json()) as { spot?: GallerySpot };
+          setSpot(d.spot ?? null);
+        }
+
+        if (!photosRes.ok) {
+          const text = await photosRes.text();
+          setError(text || "写真の取得に失敗しました。");
+          return;
+        }
+        const d = (await photosRes.json()) as { photos?: GalleryPhoto[]; total?: number | null };
+        setPhotos(d.photos ?? []);
+        setTotal(typeof d.total === "number" ? d.total : null);
+        setError(null);
+      } finally {
+        if (!cancelled) setPhotosLoading(false);
       }
-      const d = (await photosRes.json()) as { photos?: GalleryPhoto[]; total?: number | null };
-      setPhotos(d.photos ?? []);
-      setTotal(typeof d.total === "number" ? d.total : null);
-      setError(null);
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [id, isUuid, isMergedGallery]);
 
   if (isMergedGallery) {
@@ -87,14 +104,16 @@ export function GalleryClient({ spotId }: { spotId: string }) {
       next.delete(photoId);
       return next;
     });
-    clearSpotsBoundsCache();
+    void refreshAllSpotsSnapshot();
   };
 
   return (
-    <div className="bg-background text-on-surface min-h-screen pb-24">
+    <div className="min-h-screen bg-[#f3f4f6] text-[#111827] scheme-light">
       <TopNav />
 
-      <main className="pt-20 px-margin-mobile md:px-margin-desktop max-w-7xl mx-auto">
+      <main
+        className={`mx-auto max-w-7xl px-margin-mobile md:px-margin-desktop ${APP_MAIN_TOP_CLASS} ${APP_MAIN_BOTTOM_CLASS}`}
+      >
         <GalleryHeader
           spot={effectiveSpot}
           total={effectiveTotal}
@@ -112,6 +131,7 @@ export function GalleryClient({ spotId }: { spotId: string }) {
         <GalleryGrid
           photos={effectivePhotos}
           spot={effectiveSpot}
+          photosLoading={photosLoading}
           selectMode={selectMode && isUuid}
           selected={selected}
           onToggleSelected={toggleSelected}

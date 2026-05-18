@@ -1,7 +1,9 @@
 /**
- * マップ用スポット一覧の bounds キャッシュ（モジュールスコープ）。
- * ルート遷移で MapView がアンマウントされても残るため、ギャラリーから戻った直後もヒットしやすい。
- * アップロード・写真削除成功時は clearSpotsBoundsCache() で無効化し、次回ビューで API から取り直す。
+ * マップ用スポット一覧の共有スナップショット（モジュールスコープ）。
+ * API 取得はアップロード・削除後および初回地図表示時のみ。
+ * パン・ズームではスナップショットを表示範囲でフィルタするだけ。
+ *
+ * 注意: DB の get_spots_in_bounds は最大 500 件。それ以上は地図に出ない。
  */
 
 export type SpotMapItem = {
@@ -14,90 +16,60 @@ export type SpotMapItem = {
   thumbnail_url: string | null;
 };
 
-const BOUNDS_CACHE_EPS = 1e-5;
-export const MAX_SPOTS_BOUNDS_CACHE_ENTRIES = 24;
+const WORLD_BOUNDS = {
+  south: -85,
+  west: -180,
+  north: 85,
+  east: 180,
+} as const;
 
-export type SpotsBoundsCacheEntry = {
-  fetchKey: string;
-  south: number;
-  west: number;
-  north: number;
-  east: number;
-  spots: SpotMapItem[];
-};
+let allSpotsSnapshot: SpotMapItem[] | null = null;
 
-/** 共有キャッシュ（同一タブ内のナビゲーションで保持） */
-export const spotsBoundsCache: SpotsBoundsCacheEntry[] = [];
+export function hasAllSpotsSnapshot(): boolean {
+  return allSpotsSnapshot !== null;
+}
+
+export function getAllSpotsSnapshot(): SpotMapItem[] | null {
+  return allSpotsSnapshot;
+}
 
 export function clearSpotsBoundsCache(): void {
-  spotsBoundsCache.length = 0;
+  allSpotsSnapshot = null;
 }
 
-function boundsRectContainsRect(
-  outer: { south: number; west: number; north: number; east: number },
-  innerSouth: number,
-  innerWest: number,
-  innerNorth: number,
-  innerEast: number,
-): boolean {
-  return (
-    innerSouth >= outer.south - BOUNDS_CACHE_EPS &&
-    innerNorth <= outer.north + BOUNDS_CACHE_EPS &&
-    innerWest >= outer.west - BOUNDS_CACHE_EPS &&
-    innerEast <= outer.east + BOUNDS_CACHE_EPS
-  );
-}
-
-function filterSpotsByBounds(
+export function filterSpotsInBounds(
   spots: SpotMapItem[],
-  innerSouth: number,
-  innerWest: number,
-  innerNorth: number,
-  innerEast: number,
+  south: number,
+  west: number,
+  north: number,
+  east: number,
 ): SpotMapItem[] {
   return spots.filter(
-    (s) => s.lat >= innerSouth && s.lat <= innerNorth && s.lng >= innerWest && s.lng <= innerEast,
+    (s) => s.lat >= south && s.lat <= north && s.lng >= west && s.lng <= east,
   );
 }
 
-/** ヒット時は LRU 用に `cache` の先頭へ該当エントリを移動する */
-export function readSpotsFromBoundsCache(
-  cache: SpotsBoundsCacheEntry[],
-  fetchKey: string,
-  innerSouth: number,
-  innerWest: number,
-  innerNorth: number,
-  innerEast: number,
-  debug: boolean,
-): SpotMapItem[] | null {
-  const exactIdx = cache.findIndex((e) => e.fetchKey === fetchKey);
-  if (exactIdx >= 0) {
-    const entry = cache[exactIdx];
-    if (exactIdx > 0) {
-      cache.splice(exactIdx, 1);
-      cache.unshift(entry);
-    }
-    if (debug) console.log("[spots] bounds cache hit exact (global)", fetchKey);
-    return entry.spots;
-  }
-  for (let i = 0; i < cache.length; i++) {
-    const e = cache[i];
-    if (!boundsRectContainsRect(e, innerSouth, innerWest, innerNorth, innerEast)) continue;
-    if (i > 0) {
-      cache.splice(i, 1);
-      cache.unshift(e);
-    }
-    if (debug) console.log("[spots] bounds cache hit subset (global)", e.fetchKey, "->", fetchKey);
-    return filterSpotsByBounds(e.spots, innerSouth, innerWest, innerNorth, innerEast);
-  }
-  return null;
+/** 全スポット（最大 500 件）を API 取得してスナップショットを更新 */
+export async function refreshAllSpotsSnapshot(): Promise<boolean> {
+  const { south, west, north, east } = WORLD_BOUNDS;
+  const params = new URLSearchParams({
+    bounds: `${south},${west},${north},${east}`,
+    zoom: "5",
+  });
+
+  const res = await fetch(`/api/spots?${params.toString()}`, { cache: "no-store" });
+  if (!res.ok) return false;
+
+  const payload = (await res.json()) as { spots?: SpotMapItem[] };
+  allSpotsSnapshot = payload.spots ?? [];
+  return true;
 }
 
-export function writeSpotsBoundsCache(cache: SpotsBoundsCacheEntry[], entry: SpotsBoundsCacheEntry): void {
-  const dup = cache.findIndex((e) => e.fetchKey === entry.fetchKey);
-  if (dup >= 0) cache.splice(dup, 1);
-  cache.unshift(entry);
-  if (cache.length > MAX_SPOTS_BOUNDS_CACHE_ENTRIES) {
-    cache.length = MAX_SPOTS_BOUNDS_CACHE_ENTRIES;
-  }
+/** @deprecated アップロード後は全件スナップショットを更新する */
+export async function refreshSpotsBoundsCacheAt(
+  _lat: number,
+  _lng: number,
+  _zoom = 16,
+): Promise<boolean> {
+  return refreshAllSpotsSnapshot();
 }

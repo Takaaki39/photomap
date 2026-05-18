@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { TopNav } from "@/components/Nav/TopNav";
 import { BottomNav } from "@/components/Nav/BottomNav";
+import { APP_MAIN_BOTTOM_CLASS, APP_MAIN_TOP_CLASS, TopNav } from "@/components/Nav/TopNav";
 import { GalleryGrid } from "@/components/Gallery/GalleryGrid";
 import type { GalleryPhoto, GallerySpot } from "@/components/Gallery/types";
-import { clearSpotsBoundsCache } from "@/lib/spotsBoundsCache";
+import { refreshAllSpotsSnapshot } from "@/lib/spotsBoundsCache";
 import { normalizeGalleryRouteId } from "@/lib/galleryRouteId";
 
 const PREFIX = "cluster:spots~";
@@ -18,6 +18,7 @@ export function MergedSpotsGalleryClient({ clusterId }: { clusterId: string }) {
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [total, setTotal] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [photosLoading, setPhotosLoading] = useState(true);
 
   const canonicalClusterId = useMemo(() => normalizeGalleryRouteId(clusterId), [clusterId]);
 
@@ -40,22 +41,31 @@ export function MergedSpotsGalleryClient({ clusterId }: { clusterId: string }) {
   }, [canonicalClusterId, spotIds.length]);
 
   useEffect(() => {
-    if (spotIds.length === 0) return;
+    if (spotIds.length === 0) {
+      setPhotosLoading(false);
+      return;
+    }
     let cancelled = false;
+    setPhotosLoading(true);
+    setPhotos([]);
     void (async () => {
-      const res = await fetch(`/api/photos/by-spots?ids=${encodeURIComponent(spotIds.join(","))}`, {
-        cache: "no-store",
-      });
-      if (!res.ok) {
-        const t = await res.text();
-        if (!cancelled) setError(t || "写真の取得に失敗しました。");
-        return;
+      try {
+        const res = await fetch(`/api/photos/by-spots?ids=${encodeURIComponent(spotIds.join(","))}`, {
+          cache: "no-store",
+        });
+        if (cancelled) return;
+        if (!res.ok) {
+          const t = await res.text();
+          setError(t || "写真の取得に失敗しました。");
+          return;
+        }
+        const d = (await res.json()) as { photos?: GalleryPhoto[]; total?: number };
+        setPhotos(d.photos ?? []);
+        setTotal(typeof d.total === "number" ? d.total : null);
+        setError(null);
+      } finally {
+        if (!cancelled) setPhotosLoading(false);
       }
-      const d = (await res.json()) as { photos?: GalleryPhoto[]; total?: number };
-      if (cancelled) return;
-      setPhotos(d.photos ?? []);
-      setTotal(typeof d.total === "number" ? d.total : null);
-      setError(null);
     })();
     return () => {
       cancelled = true;
@@ -71,7 +81,7 @@ export function MergedSpotsGalleryClient({ clusterId }: { clusterId: string }) {
     }
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
     setTotal((prev) => (typeof prev === "number" ? Math.max(0, prev - 1) : prev));
-    clearSpotsBoundsCache();
+    void refreshAllSpotsSnapshot();
   };
 
   const derivedError =
@@ -80,10 +90,12 @@ export function MergedSpotsGalleryClient({ clusterId }: { clusterId: string }) {
   const galleryHref = `/gallery/${encodeURIComponent(canonicalClusterId)}`;
 
   return (
-    <div className="min-h-screen bg-background pb-24 text-on-surface">
+    <div className="min-h-screen bg-[#f3f4f6] text-[#111827] scheme-light">
       <TopNav />
 
-      <main className="mx-auto max-w-7xl px-margin-mobile pt-20 md:px-margin-desktop">
+      <main
+        className={`mx-auto max-w-7xl px-margin-mobile md:px-margin-desktop ${APP_MAIN_TOP_CLASS} ${APP_MAIN_BOTTOM_CLASS}`}
+      >
         <div className="mb-6">
           <h1 className="text-headline-lg font-headline-lg text-on-surface">ギャラリー</h1>
           <p className="text-body-md font-body-md text-on-surface-variant">
@@ -96,6 +108,7 @@ export function MergedSpotsGalleryClient({ clusterId }: { clusterId: string }) {
         <GalleryGrid
           photos={photos}
           spot={spot}
+          photosLoading={photosLoading}
           selectMode={false}
           selected={new Set()}
           onToggleSelected={() => {}}

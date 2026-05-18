@@ -11,9 +11,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { GeoJSON, MapContainer, TileLayer, useMapEvents } from "react-leaflet";
 import {
   type SpotMapItem,
-  readSpotsFromBoundsCache,
-  spotsBoundsCache,
-  writeSpotsBoundsCache,
+  filterSpotsInBounds,
+  getAllSpotsSnapshot,
+  hasAllSpotsSnapshot,
+  refreshAllSpotsSnapshot,
 } from "@/lib/spotsBoundsCache";
 
 type DisplayMode =
@@ -165,9 +166,7 @@ const MapViewClient = forwardRef<
   const focusAppliedRef = useRef(false);
   const autoOpenAppliedRef = useRef(false);
   const dismissedFocusRef = useRef(false);
-  const lastFetchKeyRef = useRef<string>("");
   const inFlightFetchKeyRef = useRef<string | null>(null);
-  const lastFetchAtRef = useRef(0);
   const [currentZoom, setCurrentZoom] = useState<number>(INITIAL_ZOOM);
   const persistedView = useMemo(() => readPersistedHomeView(), []);
   const [prefGeoJson, setPrefGeoJson] = useState<unknown | null>(null);
@@ -257,10 +256,9 @@ const MapViewClient = forwardRef<
     );
   }, [mapReady, locateSignal]);
 
-  const fetchSpots = useCallback(
+  const applySpotsForViewport = useCallback(
     async (map: LeafletMap) => {
       try {
-        if (debug) console.log("[spots] fetch start");
         const bounds = map.getBounds();
         const zoom = map.getZoom();
         setCurrentZoom(zoom);
@@ -268,94 +266,44 @@ const MapViewClient = forwardRef<
         const west = bounds.getWest();
         const north = bounds.getNorth();
         const east = bounds.getEast();
-        const fetchKey = [
-          zoom,
-          south.toFixed(5),
-          west.toFixed(5),
-          north.toFixed(5),
-          east.toFixed(5),
-        ].join(":");
 
-        const now = Date.now();
-
-        const cachedSpots = readSpotsFromBoundsCache(
-          spotsBoundsCache,
-          fetchKey,
-          south,
-          west,
-          north,
-          east,
-          debug,
-        );
-        if (cachedSpots !== null) {
-          setSpots(cachedSpots);
-          lastFetchKeyRef.current = fetchKey;
-          lastFetchAtRef.current = now;
+        const applyFiltered = (snapshot: SpotMapItem[]) => {
+          const visible = filterSpotsInBounds(snapshot, south, west, north, east);
+          if (debug) {
+            console.log("[spots] viewport filter", {
+              zoom,
+              total: snapshot.length,
+              visible: visible.length,
+            });
+          }
+          setSpots(visible);
           if (!autoOpenAppliedRef.current && focus.spotId) {
             autoOpenAppliedRef.current = true;
           }
+        };
+
+        if (hasAllSpotsSnapshot()) {
+          applyFiltered(getAllSpotsSnapshot() ?? []);
           return;
         }
 
-        const isSameAsLast = fetchKey === lastFetchKeyRef.current;
-        const tooSoon = now - lastFetchAtRef.current < 700;
-        if (isSameAsLast && tooSoon) {
-          if (debug) console.log("[spots] skip duplicate fetch", fetchKey);
-          return;
-        }
-        if (inFlightFetchKeyRef.current === fetchKey) {
-          if (debug) console.log("[spots] skip inflight fetch", fetchKey);
+        if (inFlightFetchKeyRef.current === "all") {
+          if (debug) console.log("[spots] skip inflight full snapshot fetch");
           return;
         }
 
-        inFlightFetchKeyRef.current = fetchKey;
-        lastFetchAtRef.current = now;
+        inFlightFetchKeyRef.current = "all";
         setLoading(true);
-
-        const params = new URLSearchParams({
-          bounds: `${south},${west},${north},${east}`,
-          zoom: String(zoom),
-        });
-
-        const response = await fetch(`/api/spots?${params.toString()}`, {
-          cache: "no-store",
-        });
+        const ok = await refreshAllSpotsSnapshot();
         setLoading(false);
-        if (!response.ok) {
-          if (debug) {
-            console.warn("[spots] fetch failed", response.status, await response.text());
-          }
+        if (!ok) {
+          if (debug) console.warn("[spots] full snapshot fetch failed");
           return;
         }
-
-        const payload = (await response.json()) as { spots: SpotMapItem[] };
-        if (debug) {
-          console.log("[spots] fetched", {
-            zoom,
-            count: payload.spots?.length ?? 0,
-            bounds: { south, west, north, east },
-          });
-        }
-        setSpots(payload.spots);
-        writeSpotsBoundsCache(spotsBoundsCache, {
-          fetchKey,
-          south,
-          west,
-          north,
-          east,
-          spots: payload.spots,
-        });
-        lastFetchKeyRef.current = fetchKey;
-
-        // NOTE:
-        // We intentionally do NOT auto-open the detail panel on upload redirect.
-        // focus params are used only for map positioning / bubble targeting.
-        if (!autoOpenAppliedRef.current && focus.spotId) {
-          autoOpenAppliedRef.current = true;
-        }
+        applyFiltered(getAllSpotsSnapshot() ?? []);
       } catch (e) {
         setLoading(false);
-        if (debug) console.error("[spots] fetch threw", e);
+        if (debug) console.error("[spots] viewport apply threw", e);
       } finally {
         inFlightFetchKeyRef.current = null;
       }
@@ -431,7 +379,7 @@ const MapViewClient = forwardRef<
         // 画面外判定でクラスタが消えるのを防ぐ（重なり付近で見えなくなるケースの抑止）
         removeOutsideVisibleBounds: false,
         // 全ズームでピクセル近傍のマーカーをクラスタ化（重なり・近接はまとめ、離れると個別表示）
-        maxClusterRadius: 56,
+        maxClusterRadius: 42,
         spiderfyOnMaxZoom: false,
       });
       markerClusterGroup.on("clusterclick", (e) => {
@@ -457,17 +405,17 @@ const MapViewClient = forwardRef<
       });
       clusterRef.current = markerClusterGroup;
       map.addLayer(markerClusterGroup);
-      void fetchSpots(map);
+      void applySpotsForViewport(map);
     },
-    [fetchSpots, focus.lat, focus.lng, focus.zoom, debug, initialCenter, initialZoom, persistedView, router],
+    [applySpotsForViewport, focus.lat, focus.lng, focus.zoom, debug, initialCenter, initialZoom, persistedView, router],
   );
 
   useEffect(() => {
     if (!mapReady) return;
     const map = mapRef.current;
     if (!map) return;
-    void fetchSpots(map);
-  }, [mapReady, fetchSpots]);
+    void applySpotsForViewport(map);
+  }, [mapReady, applySpotsForViewport]);
 
   // Note: we intentionally omit any popup/bubble UI.
 
@@ -501,13 +449,13 @@ const MapViewClient = forwardRef<
     if (typeof window !== "undefined") {
       window.requestAnimationFrame(() =>
         window.requestAnimationFrame(() => {
-          void fetchSpots(map);
+          void applySpotsForViewport(map);
         }),
       );
     } else {
-      void fetchSpots(map);
+      void applySpotsForViewport(map);
     }
-  }, [mapReady, focus.lat, focus.lng, focus.zoom, fetchSpots]);
+  }, [mapReady, focus.lat, focus.lng, focus.zoom, applySpotsForViewport]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -623,7 +571,7 @@ const MapViewClient = forwardRef<
           ) : null}
           <MapInitializer onReady={onMapReady} />
           <ModeSync onZoom={onZoomChanged} />
-          <MapEventBridge onBoundsChange={fetchSpots} onViewChange={onViewChange} />
+          <MapEventBridge onBoundsChange={applySpotsForViewport} onViewChange={onViewChange} />
         </MapContainer>
       </div>
 

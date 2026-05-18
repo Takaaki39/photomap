@@ -18,6 +18,7 @@ type PhotoRow = {
   thumbnail_url: string | null;
   is_public: boolean;
   created_at: string;
+  taken_at: string | null;
   users: { display_name: string | null } | null;
 };
 
@@ -43,7 +44,7 @@ export async function GET(request: Request) {
 
   const { data, error } = await client
     .from("photos")
-    .select("id, user_id, spot_id, storage_url, thumbnail_url, is_public, created_at, users(display_name)")
+    .select("id, user_id, spot_id, storage_url, thumbnail_url, is_public, created_at, taken_at, users(display_name)")
     .in("spot_id", spotIds)
     .order("created_at", { ascending: false })
     .limit(MAX_PHOTOS);
@@ -64,6 +65,7 @@ export async function GET(request: Request) {
         spot_id: row.spot_id,
         image_url: signedThumb ?? signedOriginal,
         created_at: row.created_at,
+        taken_at: row.taken_at,
       };
     }),
   );

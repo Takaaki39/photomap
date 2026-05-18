@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-
+import type { ReactNode } from "react";
 import { AddCircleNavIcon } from "@/components/Nav/AddCircleNavIcon";
 import { MapNavIcon } from "@/components/Nav/MapNavIcon";
 import { PersonNavIcon } from "@/components/Nav/PersonNavIcon";
@@ -9,6 +9,42 @@ import { PhotoPrintsNavIcon } from "@/components/Nav/PhotoPrintsNavIcon";
 
 export type BottomNavActive = "map" | "gallery" | "upload" | "profile";
 
+const inactive =
+  "flex flex-col items-center justify-center gap-0.5 px-4 py-2 text-[#6b7280] transition-colors hover:text-[#111827]";
+const activePill =
+  "flex flex-col items-center justify-center gap-0.5 rounded-full bg-[#bbf7d0] px-5 py-2 text-[#111827]";
+
+type NavItemProps = {
+  active: boolean;
+  href: string;
+  label: string;
+  icon: ReactNode;
+};
+
+function NavItem({ active, href, label, icon }: NavItemProps) {
+  const content = (
+    <>
+      {icon}
+      <span className="text-[11px] font-medium leading-tight">{label}</span>
+    </>
+  );
+
+  if (active) {
+    return (
+      <span className={activePill} aria-current="page">
+        {content}
+      </span>
+    );
+  }
+
+  return (
+    <Link href={href} className={inactive}>
+      {content}
+    </Link>
+  );
+}
+
+/** PhotoMap 共通フッターナビ: 白背景 + 緑ピルのアクティブ表示 */
 export function BottomNav({
   active,
   galleryHref,
@@ -16,62 +52,17 @@ export function BottomNav({
   active: BottomNavActive;
   galleryHref?: string;
 }) {
-  const itemBase =
-    "flex flex-col items-center justify-center text-inverse-on-surface/80 px-5 py-1 hover:text-primary-fixed transition-colors";
-
-  const pillBase =
-    "flex flex-col items-center justify-center bg-secondary-container dark:bg-on-secondary-fixed-variant text-on-secondary-container dark:text-secondary-fixed rounded-full px-5 py-1 scale-90 transition-all duration-200";
-
   return (
-    <nav className="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 pb-safe px-4 bg-inverse-surface/92 shadow-lg border-t border-outline/40 rounded-t-xl backdrop-blur-md bg-background dark:bg-surface-container-lowest">
-      {active === "map" ? (
-        <span className={pillBase}>
-          <MapNavIcon />
-          <span className="text-label-sm font-label-sm">マップ</span>
-        </span>
-      ) : (
-        <Link className={itemBase} href="/">
-          <MapNavIcon />
-          <span className="text-label-sm font-label-sm">マップ</span>
-        </Link>
-      )}
-
-      {active === "gallery" ? (
-        <span className={pillBase}>
-          <PhotoPrintsNavIcon />
-          <span className="text-label-sm font-label-sm">ギャラリー</span>
-        </span>
-      ) : (
-        <Link className={itemBase} href={galleryHref ?? "/"}>
-          <PhotoPrintsNavIcon />
-          <span className="text-label-sm font-label-sm">ギャラリー</span>
-        </Link>
-      )}
-
-      {active === "upload" ? (
-        <span className={pillBase}>
-          <AddCircleNavIcon />
-          <span className="text-label-sm font-label-sm">アップロード</span>
-        </span>
-      ) : (
-        <Link className={itemBase} href="/upload">
-          <AddCircleNavIcon />
-          <span className="text-label-sm font-label-sm">アップロード</span>
-        </Link>
-      )}
-
-      {active === "profile" ? (
-        <span className={pillBase}>
-          <PersonNavIcon />
-          <span className="text-label-sm font-label-sm">プロフィール</span>
-        </span>
-      ) : (
-        <Link className={itemBase} href="/profile">
-          <PersonNavIcon />
-          <span className="text-label-sm font-label-sm">プロフィール</span>
-        </Link>
-      )}
+    <nav className="fixed bottom-0 left-0 z-50 flex h-[72px] w-full items-center justify-around border-t border-[#e5e7eb] bg-white pb-safe">
+      <NavItem active={active === "map"} href="/" label="Map" icon={<MapNavIcon />} />
+      <NavItem
+        active={active === "gallery"}
+        href={galleryHref ?? "/"}
+        label="Gallery"
+        icon={<PhotoPrintsNavIcon />}
+      />
+      <NavItem active={active === "upload"} href="/upload" label="Upload" icon={<AddCircleNavIcon />} />
+      <NavItem active={active === "profile"} href="/profile" label="Profile" icon={<PersonNavIcon />} />
     </nav>
   );
 }
-

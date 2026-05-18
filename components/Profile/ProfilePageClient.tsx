@@ -1,307 +1,400 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ProfileTopNav } from "@/components/Profile/ProfileTopNav";
-import { ProfileBottomNavMobile } from "@/components/Profile/ProfileBottomNavMobile";
+import { BottomNav } from "@/components/Nav/BottomNav";
+import { APP_MAIN_TOP_CLASS } from "@/components/Nav/TopNav";
 import { PhotoLightbox } from "@/components/Photo/PhotoLightbox";
+import { ProfilePageTopNav } from "@/components/Profile/ProfilePageTopNav";
 import type { MyPhoto } from "@/components/Me/types";
-import { clearSpotsBoundsCache } from "@/lib/spotsBoundsCache";
+import { refreshAllSpotsSnapshot } from "@/lib/spotsBoundsCache";
+
+type MeProfile = {
+  display_name: string;
+  username: string | null;
+  bio: string | null;
+  primary_location: string | null;
+  avatar_url: string | null;
+  email: string | null;
+  member_since: string | null;
+};
+
+type FavoriteSpot = {
+  spotKey: string;
+  name: string;
+  region: string;
+  photos: MyPhoto[];
+  coverUrl: string | null;
+};
+
+const AVATAR_FALLBACK =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Crect fill='%23dbeafe' width='120' height='120'/%3E%3Ccircle cx='60' cy='44' r='22' fill='%2393c5fd'/%3E%3Cellipse cx='60' cy='98' rx='36' ry='26' fill='%2393c5fd'/%3E%3C/svg%3E";
+
+const SPOT_DOT_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"];
+
+const DEFAULT_BIO =
+  "Adventure photographer and geography enthusiast. Documenting the world's hidden gems one coordinate at a time.";
+
+function spotRegionLabel(name: string, fallback?: string | null) {
+  const parts = name.split(",").map((s) => s.trim()).filter(Boolean);
+  if (parts.length >= 2) return parts[parts.length - 1];
+  return fallback?.trim() || name;
+}
+
+function spotDescription(name: string) {
+  return `Photos and memories captured around ${name}.`;
+}
 
 export function ProfilePageClient() {
   const [photos, setPhotos] = useState<MyPhoto[]>([]);
+  const [profile, setProfile] = useState<MeProfile | null>(null);
+  const [avatarSrc, setAvatarSrc] = useState(AVATAR_FALLBACK);
   const [error, setError] = useState<string | null>(null);
-
-  const query = useMemo(() => {
-    const p = new URLSearchParams();
-    return p.toString();
-  }, []);
+  const [tab, setTab] = useState<"gallery" | "favorites" | "maps">("gallery");
+  const [activePhotoId, setActivePhotoId] = useState<string | null>(null);
 
   const fetchPhotos = useCallback(async () => {
-    const res = await fetch(`/api/me/photos?${query}`, { cache: "no-store" });
+    const res = await fetch("/api/me/photos", { cache: "no-store" });
     if (!res.ok) {
       const d = await res.json();
-      setError(d.error ?? "取得失敗");
+      setError(d.error ?? "Failed to load photos.");
       return;
     }
     setError(null);
     const d = await res.json();
     setPhotos(d.photos ?? []);
-  }, [query]);
+  }, []);
+
+  const fetchProfile = useCallback(async () => {
+    const res = await fetch("/api/me/profile", { cache: "no-store" });
+    if (!res.ok) return;
+    const d = (await res.json()) as { profile?: MeProfile };
+    if (!d.profile) return;
+    setProfile(d.profile);
+    setAvatarSrc(d.profile.avatar_url || AVATAR_FALLBACK);
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchPhotos();
-  }, [fetchPhotos]);
+    void fetchProfile();
+  }, [fetchPhotos, fetchProfile]);
 
-  // NOTE: next-auth SessionProvider is not wired in this app currently.
-  // Keep UI stable by using placeholders; data-driven fields come from /api/me/photos.
-  const userName = "Alex Rivera";
-  const userImage = "";
-  const memberSince = "2022";
+  const userName = profile?.display_name ?? "User";
+  const bioText = profile?.bio?.trim() || DEFAULT_BIO;
+  const memberSince = profile?.member_since
+    ? new Date(profile.member_since).getFullYear().toString()
+    : "—";
 
   const totalPhotos = photos.length;
   const placesVisited = useMemo(() => {
     const s = new Set<string>();
     for (const p of photos) {
-      if (p.spot_name) s.add(p.spot_name);
+      if (p.spot_id) s.add(p.spot_id);
+      else if (p.spot_name) s.add(p.spot_name);
     }
     return s.size;
   }, [photos]);
 
-  const photosNewestFirst = useMemo(() => {
-    return [...photos].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [photos]);
+  const photosNewestFirst = useMemo(
+    () => [...photos].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    [photos],
+  );
 
-  const [tab, setTab] = useState<"gallery" | "favorites" | "maps">("gallery");
-  const [activePhotoId, setActivePhotoId] = useState<string | null>(null);
-  const activePhoto = useMemo(() => photosNewestFirst.find((p) => p.id === activePhotoId) ?? null, [activePhotoId, photosNewestFirst]);
+  const favoriteSpots = useMemo((): FavoriteSpot[] => {
+    const byKey = new Map<string, MyPhoto[]>();
+    for (const p of photos) {
+      const key = p.spot_id || p.spot_name || "unknown";
+      const list = byKey.get(key) ?? [];
+      list.push(p);
+      byKey.set(key, list);
+    }
+    return [...byKey.entries()]
+      .map(([spotKey, spotPhotos]) => {
+        const sorted = [...spotPhotos].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        );
+        const name = sorted[0]?.spot_name || "Unnamed spot";
+        return {
+          spotKey,
+          name,
+          region: spotRegionLabel(name, profile?.primary_location),
+          photos: sorted,
+          coverUrl: sorted.find((x) => x.image_url)?.image_url ?? null,
+        };
+      })
+      .sort((a, b) => b.photos.length - a.photos.length);
+  }, [photos, profile?.primary_location]);
+
+  const activePhoto = useMemo(
+    () => photosNewestFirst.find((p) => p.id === activePhotoId) ?? null,
+    [activePhotoId, photosNewestFirst],
+  );
 
   const deletePhoto = async (photoId: string) => {
-    if (!confirm("この写真を削除しますか？（クラウド上の画像も削除されます）")) return;
+    if (!confirm("Delete this photo? (Removed from cloud storage too.)")) return;
     const res = await fetch(`/api/photos/${photoId}`, { method: "DELETE" });
     if (!res.ok) {
       const text = await res.text();
-      setError(text || "削除に失敗しました。");
+      setError(text || "Delete failed.");
       return;
     }
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
     if (activePhotoId === photoId) setActivePhotoId(null);
-    clearSpotsBoundsCache();
+    void refreshAllSpotsSnapshot();
   };
 
+  const tabClass = (id: typeof tab) =>
+    id === tab
+      ? "border-b-2 border-[#2563eb] px-6 py-4 text-[15px] font-medium text-[#2563eb]"
+      : "px-6 py-4 text-[15px] font-medium text-[#6b7280] transition-colors hover:text-[#111827]";
+
+  const showRecent = tab === "gallery";
+  const showFavorites = tab === "gallery" || tab === "favorites";
+  const showMaps = tab === "maps";
+
   return (
-    <div className="bg-background text-on-background min-h-screen pb-24 md:pb-0">
-      <ProfileTopNav />
+    <div className="min-h-screen bg-[#f7f9ff] text-[#111827] scheme-light">
+      <ProfilePageTopNav />
 
-      <main className="pt-16 max-w-7xl mx-auto">
-        <section className="profile-cover w-full pt-12 pb-8 px-margin-mobile md:px-margin-desktop">
-          <div className="flex flex-col md:flex-row items-center md:items-end gap-6">
-            <div className="relative">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                alt="User Avatar"
-                className="w-32 h-32 md:w-40 md:h-40 rounded-full border-4 border-white shadow-md object-cover"
-                src={
-                  userImage ||
-                  "https://lh3.googleusercontent.com/aida-public/AB6AXuBnxUVpEQIWxg-OJ-BVkE76SJL7P3BQYDUxoSD_F9imhXBeDcSg12BatQ9kmi7sURrIyOhXVrS2ABvwbPvf2OO38zDB-FV5OEs7jnmysv75wLtqkNIPGng8ssQnB9lqP6d6hcIpZNcydWjNeHTJRTcZMRQF-6yUyklYZV54myIV-nXWXHYm0XASLnisjRESPFjYrag66-TZQAHcrU2LHrtwelv8sWyxgc-aJthLAwDHLq9Mg-m14jjM3YPczA78kQ8njTuOwRVWqqM"
-                }
-              />
-            </div>
+      <main
+        className={`mx-auto max-w-7xl ${APP_MAIN_TOP_CLASS} pb-10 max-md:pb-[88px] md:pb-12`}
+      >
+        {/* Hero */}
+        <section className="profile-cover px-4 pb-10 pt-8 sm:px-6 md:px-10">
+          <div className="flex flex-col items-center gap-6 md:flex-row md:items-end">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              alt=""
+              className="h-32 w-32 shrink-0 rounded-full border-4 border-white object-cover shadow-md md:h-40 md:w-40"
+              src={avatarSrc}
+              onError={() => setAvatarSrc(AVATAR_FALLBACK)}
+            />
 
-            <div className="flex-1 text-center md:text-left mb-2">
-              <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
-                <h1 className="text-display font-display text-on-surface">{userName}</h1>
-                <button
-                  type="button"
-                  className="flex items-center justify-center gap-2 px-6 py-2 bg-surface-container-high text-on-surface-variant font-label-lg text-label-lg rounded-xl hover:bg-surface-container-highest transition-colors active:scale-95 duration-150"
+            <div className="flex-1 text-center md:text-left">
+              <div className="flex flex-col items-center gap-3 md:flex-row md:items-center md:gap-4">
+                <h1 className="text-[28px] font-bold leading-tight text-[#111827] md:text-[32px]">
+                  {userName}
+                </h1>
+                <Link
+                  href="/profile/edit"
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#e5e7eb] px-4 py-2 text-sm font-medium text-[#374151] transition-colors hover:bg-[#d1d5db]"
                 >
-                  <span className="material-symbols-outlined text-lg">edit</span>
-                  プロフィールを編集
-                </button>
+                  <svg
+                    width={16}
+                    height={16}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                  >
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                  </svg>
+                  Edit Profile
+                </Link>
               </div>
-              <p className="mt-2 text-body-lg font-body-lg text-on-surface-variant max-w-xl">
-                旅と写真が好き。座標とともに、世界の隠れた魅力を記録しています。
-              </p>
+              <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-[#6b7280]">{bioText}</p>
             </div>
+          </div>
+
+          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {[
+              { value: totalPhotos, label: "Total Photos" },
+              { value: placesVisited, label: "Places Visited" },
+              { value: memberSince, label: "Member Since" },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                className="flex flex-col items-center justify-center rounded-xl border border-[#e5e7eb]/60 bg-white px-6 py-6 text-center shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
+              >
+                <span className="text-[32px] font-bold leading-none text-[#2563eb]">{stat.value}</span>
+                <span className="mt-2 text-xs font-medium uppercase tracking-wide text-[#9ca3af]">
+                  {stat.label}
+                </span>
+              </div>
+            ))}
           </div>
         </section>
 
-        <section className="px-margin-mobile md:px-margin-desktop py-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-gutter">
-            <div className="bg-surface-container-low p-6 rounded-xl flex flex-col items-center justify-center text-center shadow-sm">
-              <span className="text-display font-display text-primary">{totalPhotos}</span>
-              <span className="text-label-lg font-label-lg text-outline">写真数</span>
-            </div>
-            <div className="bg-surface-container-low p-6 rounded-xl flex flex-col items-center justify-center text-center shadow-sm">
-              <span className="text-display font-display text-primary">{placesVisited}</span>
-              <span className="text-label-lg font-label-lg text-outline">訪れた場所</span>
-            </div>
-            <div className="bg-surface-container-low p-6 rounded-xl flex flex-col items-center justify-center text-center shadow-sm">
-              <span className="text-display font-display text-primary">{memberSince}</span>
-              <span className="text-label-lg font-label-lg text-outline">登録年</span>
-            </div>
-          </div>
-        </section>
-
-        <nav className="flex border-b border-outline-variant px-margin-mobile md:px-margin-desktop mb-8">
-          <button
-            type="button"
-            onClick={() => setTab("gallery")}
-            className={
-              tab === "gallery"
-                ? "px-6 py-4 border-b-2 border-primary text-primary font-label-lg text-label-lg"
-                : "px-6 py-4 text-on-surface-variant hover:text-primary transition-colors font-label-lg text-label-lg"
-            }
-          >
-            ギャラリー
+        {/* Tabs */}
+        <nav className="flex border-b border-[#e5e7eb] px-4 sm:px-6 md:px-10" aria-label="Profile sections">
+          <button type="button" onClick={() => setTab("gallery")} className={tabClass("gallery")}>
+            Gallery
           </button>
-          <button
-            type="button"
-            onClick={() => setTab("favorites")}
-            className={
-              tab === "favorites"
-                ? "px-6 py-4 border-b-2 border-primary text-primary font-label-lg text-label-lg"
-                : "px-6 py-4 text-on-surface-variant hover:text-primary transition-colors font-label-lg text-label-lg"
-            }
-          >
-            お気に入り
+          <button type="button" onClick={() => setTab("favorites")} className={tabClass("favorites")}>
+            Favorites
           </button>
-          <button
-            type="button"
-            onClick={() => setTab("maps")}
-            className={
-              tab === "maps"
-                ? "px-6 py-4 border-b-2 border-primary text-primary font-label-lg text-label-lg"
-                : "px-6 py-4 text-on-surface-variant hover:text-primary transition-colors font-label-lg text-label-lg"
-            }
-          >
-            マップ
+          <button type="button" onClick={() => setTab("maps")} className={tabClass("maps")}>
+            Maps
           </button>
         </nav>
 
-        {error ? (
-          <section className="px-margin-mobile md:px-margin-desktop mb-8">
-            <p className="text-body-md font-body-md text-error">{error}</p>
-          </section>
-        ) : null}
+        <div className="px-4 sm:px-6 md:px-10">
+          {error ? (
+            <p className="mt-6 text-sm text-[#dc2626]" role="alert">
+              {error}
+            </p>
+          ) : null}
 
-        <section className="px-margin-mobile md:px-margin-desktop mb-12">
-          <h2 className="text-headline-lg font-headline-lg mb-6 text-on-surface">最近の投稿</h2>
+          {showMaps ? (
+            <section className="py-12 text-center">
+              <p className="text-[15px] text-[#6b7280]">View your photo pins on the map.</p>
+              <Link
+                href="/"
+                className="mt-4 inline-flex rounded-xl bg-[#2563eb] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#1d4ed8]"
+              >
+                Open Map
+              </Link>
+            </section>
+          ) : null}
 
-          {tab !== "gallery" ? (
-            <div className="text-body-md font-body-md text-on-surface-variant">準備中</div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {photosNewestFirst.slice(0, 24).map((p) => (
-                <div
-                  key={p.id}
-                  onClick={() => setActivePhotoId(p.id)}
-                  onKeyDown={(e) => {
-                    if (e.key !== "Enter" && e.key !== " ") return;
-                    e.preventDefault();
-                    setActivePhotoId(p.id);
-                  }}
-                  className="group relative aspect-3/4 overflow-hidden rounded-xl bg-surface-container shadow-sm hover:shadow-md transition-shadow text-left"
-                  role="button"
-                  tabIndex={0}
-                >
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void deletePhoto(p.id);
-                    }}
-                    className="absolute top-2 left-2 z-10 rounded-full bg-surface/85 backdrop-blur-md p-1 shadow hover:bg-surface transition-colors"
-                    aria-label="削除"
-                  >
-                    <img
-                      src="/icons/delete_32dp.svg"
-                      alt=""
-                      width={20}
-                      height={20}
-                      className="block size-5"
-                      draggable={false}
-                    />
-                  </button>
-
-                  {p.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      src={p.image_url}
-                      alt={p.spot_name || "最近の投稿"}
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-label-sm font-label-sm text-outline">
-                      画像なし
+          {showRecent ? (
+            <section className="mb-12 mt-8">
+              <h2 className="mb-6 text-xl font-bold text-[#111827]">Recent Uploads</h2>
+              {photosNewestFirst.length === 0 ? (
+                <p className="text-[15px] text-[#6b7280]">No photos yet.</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                  {photosNewestFirst.slice(0, 24).map((p) => (
+                    <div
+                      key={p.id}
+                      onClick={() => setActivePhotoId(p.id)}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter" && e.key !== " ") return;
+                        e.preventDefault();
+                        setActivePhotoId(p.id);
+                      }}
+                      className="group relative aspect-3/4 cursor-pointer overflow-hidden rounded-xl bg-[#e5e7eb] shadow-[0_1px_3px_rgba(0,0,0,0.08)] transition-shadow hover:shadow-md"
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void deletePhoto(p.id);
+                        }}
+                        className="absolute left-2 top-2 z-10 rounded-full bg-white/90 p-1 shadow hover:bg-white"
+                        aria-label="Delete photo"
+                      >
+                        <img
+                          src="/icons/delete_32dp.svg"
+                          alt=""
+                          width={20}
+                          height={20}
+                          className="block size-5"
+                          draggable={false}
+                        />
+                      </button>
+                      {p.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          src={p.image_url}
+                          alt={p.spot_name || "Photo"}
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-xs text-[#9ca3af]">
+                          No image
+                        </div>
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/65 to-transparent p-3 pt-8">
+                        <p className="text-sm font-medium text-white">{p.spot_name || "Untitled"}</p>
+                      </div>
                     </div>
-                  )}
-                  <div className="absolute inset-x-0 bottom-0 p-4 bg-linear-to-t from-black/60 to-transparent">
-                    <p className="text-white font-label-sm text-label-sm">{p.spot_name || "名称未設定"}</p>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
-        </section>
+              )}
+            </section>
+          ) : null}
 
-        <section className="px-margin-mobile md:px-margin-desktop mb-16">
-          <h2 className="text-headline-lg font-headline-lg mb-6 text-on-surface">お気に入りスポット</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-gutter">
-            <div className="bg-surface-container-lowest rounded-xl overflow-hidden shadow-sm flex flex-col md:flex-row h-auto md:h-48 border border-surface-container-high hover:shadow-md transition-shadow group">
-              <div className="w-full md:w-48 h-48 md:h-full relative overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuBD1DdFPQwGP9N8DOkEC2aYBakIdbcn8s7cx4yMIPbaDxkJCMMPLTcBOZ_9fIMwqnu0OdOxrUWWaHk2KHyNfs3MLMhAST7zGFBHMWrUDPbzpgp1dVcugwBUJTz5iasLSRR5mFnbBMqP7GMZw-wau-8S2LtMM6IRRM9diONT3nUx8cbOnU6cOUOSjOJDBlvNxL0eYZujG9KZn2J5vho5Ywwr4Ss4EdikXAbJjfZMNm_4Q8kcckutROuDZX-qXsPKnlvLI2YeXqKSwZ0"
-                  alt="Favorite location"
-                />
-              </div>
-              <div className="p-6 flex flex-col justify-between flex-1">
-                <div>
-                  <h3 className="text-headline-md font-headline-md text-on-surface">London City Center</h3>
-                  <div className="flex items-center gap-1 text-primary mt-1">
-                    <span className="material-symbols-outlined text-sm">location_on</span>
-                    <span className="text-label-sm font-label-sm">United Kingdom</span>
-                  </div>
-                  <p className="text-body-md font-body-md text-on-surface-variant mt-2 line-clamp-2">
-                    Historic landmarks and vibrant modern architecture meet in this iconic metropolis.
-                  </p>
+          {showFavorites ? (
+            <section className="mb-16 mt-8">
+              <h2 className="mb-6 text-xl font-bold text-[#111827]">Favorite Locations</h2>
+              {favoriteSpots.length === 0 ? (
+                <p className="text-[15px] text-[#6b7280]">Upload photos to build your favorite spots.</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  {favoriteSpots.slice(0, tab === "favorites" ? 20 : 4).map((spot, index) => (
+                    <Link
+                      key={spot.spotKey}
+                      href={`/gallery/${encodeURIComponent(spot.spotKey)}`}
+                      className="flex flex-col overflow-hidden rounded-xl border border-[#e5e7eb]/80 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06)] transition-shadow hover:shadow-md sm:flex-row sm:h-48"
+                    >
+                      <div className="relative h-48 w-full shrink-0 overflow-hidden sm:h-full sm:w-48">
+                        {spot.coverUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={spot.coverUrl}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-[#e5e7eb] text-sm text-[#9ca3af]">
+                            No cover
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-1 flex-col justify-between p-6">
+                        <div>
+                          <h3 className="text-lg font-bold text-[#111827]">{spot.name}</h3>
+                          <p className="mt-1 flex items-center gap-1 text-sm text-[#2563eb]">
+                            <img
+                              src="/icons/my_location_48dp_E3E3E3_FILL0_wght400_GRAD0_opsz48.svg"
+                              alt=""
+                              width={16}
+                              height={16}
+                              className="block brightness-[0.35] hue-rotate-[200deg]"
+                              aria-hidden
+                            />
+                            {spot.region}
+                          </p>
+                          <p className="mt-2 line-clamp-2 text-[14px] leading-relaxed text-[#6b7280]">
+                            {spotDescription(spot.name)}
+                          </p>
+                        </div>
+                        <div className="mt-4 flex items-center gap-3">
+                          <div className="flex -space-x-2">
+                            {SPOT_DOT_COLORS.slice(0, 3).map((color, i) => (
+                              <span
+                                key={color}
+                                className="h-6 w-6 rounded-full border-2 border-white"
+                                style={{
+                                  backgroundColor:
+                                    SPOT_DOT_COLORS[(index + i) % SPOT_DOT_COLORS.length],
+                                }}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-sm text-[#9ca3af]">
+                            {spot.photos.length} Photo{spot.photos.length === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
                 </div>
-                <div className="flex items-center gap-4 mt-4">
-                  <div className="flex -space-x-2">
-                    <div className="w-6 h-6 rounded-full border-2 border-white bg-primary-fixed"></div>
-                    <div className="w-6 h-6 rounded-full border-2 border-white bg-secondary-fixed"></div>
-                    <div className="w-6 h-6 rounded-full border-2 border-white bg-surface-variant"></div>
-                  </div>
-                  <span className="text-label-sm font-label-sm text-outline">12枚</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-surface-container-lowest rounded-xl overflow-hidden shadow-sm flex flex-col md:flex-row h-auto md:h-48 border border-surface-container-high hover:shadow-md transition-shadow group">
-              <div className="w-full md:w-48 h-48 md:h-full relative overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuCU3XdobahZ3Q1lGKvvgzgAxdO7Ygzzh_dSu1T6kktdX-jUhIN9gKjdhs_ZiOk4KH0FxYhViW8-rWCqGbZbYs3nwJIZFUEMAb2For9g-vE9RMnTki1sRI1x3EoKgtgXVS6YNMDtX4Mgyty4qxf6ZA6gvVXHCbt8RcbwF9vCXUqjwsbzDJuz3jKYoMK5g8CYPwaxzuTZiHqPidnKzo-460hoki94T6PzdBPVnufF5_aebwJkJyr-isAZt4XKktJTuJFjPcH_y-SGUso"
-                  alt="Favorite location"
-                />
-              </div>
-              <div className="p-6 flex flex-col justify-between flex-1">
-                <div>
-                  <h3 className="text-headline-md font-headline-md text-on-surface">Venice Canals</h3>
-                  <div className="flex items-center gap-1 text-primary mt-1">
-                    <span className="material-symbols-outlined text-sm">location_on</span>
-                    <span className="text-label-sm font-label-sm">Italy</span>
-                  </div>
-                  <p className="text-body-md font-body-md text-on-surface-variant mt-2 line-clamp-2">
-                    The timeless beauty of winding waterways and historic Italian architecture.
-                  </p>
-                </div>
-                <div className="flex items-center gap-4 mt-4">
-                  <div className="flex -space-x-2">
-                    <div className="w-6 h-6 rounded-full border-2 border-white bg-tertiary-fixed"></div>
-                    <div className="w-6 h-6 rounded-full border-2 border-white bg-primary-fixed"></div>
-                  </div>
-                  <span className="text-label-sm font-label-sm text-outline">8枚</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+              )}
+            </section>
+          ) : null}
+        </div>
       </main>
 
       <PhotoLightbox
         open={Boolean(activePhoto?.image_url)}
         src={activePhoto?.image_url ?? null}
-        alt={activePhoto?.spot_name || "写真"}
+        alt={activePhoto?.spot_name || "Photo"}
         onClose={() => setActivePhotoId(null)}
       />
 
-      <ProfileBottomNavMobile />
+      <div className="md:hidden">
+        <BottomNav active="profile" />
+      </div>
     </div>
   );
 }
-

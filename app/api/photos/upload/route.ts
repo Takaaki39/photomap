@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { getServerAuthSession } from "@/lib/auth";
-import { extractGpsFromExif } from "@/lib/exif";
+import { extractDateTakenFromExif, extractGpsFromExif } from "@/lib/exif";
 import { reverseGeocode } from "@/lib/geocode";
 import { matchOrCreateSpot } from "@/lib/spotMatcher";
 import { createSupabaseAdminClient } from "@/lib/supabase";
@@ -117,6 +117,8 @@ export async function POST(request: Request) {
     const placeName = geocode?.name ?? (manualPlaceName || "不明なスポット");
     const spotId = await matchOrCreateSpot(gps.lat, gps.lng, placeName);
 
+    const takenAtFromExif = await extractDateTakenFromExif(file);
+
     const fileBuffer = new Uint8Array(await file.arrayBuffer());
     let sanitizedBuffer: Uint8Array = fileBuffer;
     try {
@@ -176,7 +178,11 @@ export async function POST(request: Request) {
 
     const isPublic = String(formData.get("is_public") ?? "true") === "true";
     const takenAtRaw = formData.get("taken_at");
-    const takenAt = typeof takenAtRaw === "string" && takenAtRaw ? takenAtRaw : null;
+    const takenAtFromForm = typeof takenAtRaw === "string" && takenAtRaw ? takenAtRaw : null;
+    const takenAt =
+      takenAtFromForm ??
+      takenAtFromExif ??
+      (Number.isFinite(file.lastModified) ? new Date(file.lastModified).toISOString() : null);
     const insertPayload: Database["public"]["Tables"]["photos"]["Insert"] = {
       user_id: appUserId,
       spot_id: spotId,

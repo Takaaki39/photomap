@@ -111,7 +111,7 @@ export function HomePageClient() {
   }, []);
 
   return (
-    <div className="home-outlined-typo relative w-full h-svh overflow-hidden bg-background text-on-surface">
+    <div className="relative h-svh w-full overflow-hidden bg-[#f3f4f6] text-[#111827] scheme-light">
       <TopNav />
 
       <main className="relative h-svh w-full">

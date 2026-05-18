@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { extractGpsFromExif } from "@/lib/exif";
-import { clearSpotsBoundsCache } from "@/lib/spotsBoundsCache";
+import { refreshAllSpotsSnapshot } from "@/lib/spotsBoundsCache";
 import { UploadResultModal } from "@/components/Upload/UploadResultModal";
 import { UploadFileDrop } from "@/components/Upload/UploadFileDrop";
 import { UploadMapCard } from "@/components/Upload/UploadMapCard";
 import { UploadPreview } from "@/components/Upload/UploadPreview";
-import { TopNav } from "@/components/Nav/TopNav";
 import { BottomNav } from "@/components/Nav/BottomNav";
+import { APP_MAIN_BOTTOM_CLASS, APP_MAIN_TOP_CLASS, TopNav } from "@/components/Nav/TopNav";
 
 const MAX_BYTES = 20 * 1024 * 1024;
 const ALLOWED_MIME = new Set([
@@ -258,18 +258,21 @@ export default function UploadPage() {
         lat: Number.isFinite(resultLat) ? resultLat : undefined,
         lng: Number.isFinite(resultLng) ? resultLng : undefined,
       });
-      clearSpotsBoundsCache();
     }
+
+    await refreshAllSpotsSnapshot();
 
     setUploadingIndex(null);
     setStage("done");
   };
 
   return (
-    <div className="min-h-screen bg-background text-on-surface">
+    <div className="min-h-screen bg-[#f3f4f6] text-[#111827] scheme-light">
       <TopNav />
 
-      <main className="mx-auto w-full max-w-7xl px-margin-mobile pb-24 pt-24 md:px-margin-desktop">
+      <main
+        className={`mx-auto w-full max-w-7xl px-margin-mobile md:px-margin-desktop ${APP_MAIN_TOP_CLASS} ${APP_MAIN_BOTTOM_CLASS}`}
+      >
         {error ? (
           <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             {error}

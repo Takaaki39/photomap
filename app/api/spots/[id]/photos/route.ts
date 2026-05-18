@@ -19,6 +19,7 @@ type SpotPhotoRow = {
   thumbnail_url: string | null;
   is_public: boolean;
   created_at: string;
+  taken_at: string | null;
   users: { display_name: string | null } | null;
 };
 
@@ -37,7 +38,7 @@ export async function GET(request: Request, context: RouteContext) {
 
   const { data, error, count } = await client
     .from("photos")
-    .select("id, user_id, spot_id, storage_url, thumbnail_url, is_public, created_at, users(display_name)", {
+    .select("id, user_id, spot_id, storage_url, thumbnail_url, is_public, created_at, taken_at, users(display_name)", {
       count: "exact",
     })
     .eq("spot_id", id)
@@ -65,6 +66,7 @@ export async function GET(request: Request, context: RouteContext) {
           storage_path: row.storage_url,
           is_public: row.is_public,
           created_at: row.created_at,
+          taken_at: row.taken_at,
           author_name: row.users?.display_name ?? "Unknown",
         };
       })

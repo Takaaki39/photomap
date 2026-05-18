@@ -8,6 +8,9 @@ export type Database = {
           id: string;
           email: string;
           display_name: string | null;
+          username: string | null;
+          bio: string | null;
+          primary_location: string | null;
           avatar_url: string | null;
           created_at: string;
         };
@@ -15,6 +18,9 @@ export type Database = {
           id: string;
           email: string;
           display_name?: string | null;
+          username?: string | null;
+          bio?: string | null;
+          primary_location?: string | null;
           avatar_url?: string | null;
           created_at?: string;
         };
@@ -22,6 +28,9 @@ export type Database = {
           id?: string;
           email?: string;
           display_name?: string | null;
+          username?: string | null;
+          bio?: string | null;
+          primary_location?: string | null;
           avatar_url?: string | null;
           created_at?: string;
         };

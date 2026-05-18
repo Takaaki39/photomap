@@ -2,13 +2,8 @@
 
 import { useEffect, useState } from "react";
 import AdBanner from "@/components/AdBanner";
-import uploadTips from "@/data/tips.json";
-
-type TipsFile = { tips?: string[] };
-
-const TIP_LIST: string[] = ((uploadTips as TipsFile).tips ?? []).filter(
-  (t) => typeof t === "string" && t.trim().length > 0,
-);
+import { TipsCard } from "@/components/Tips/TipsCard";
+import { useRandomTip } from "@/components/Tips/useRandomTip";
 
 export function UploadResultModal({
   open,
@@ -26,16 +21,7 @@ export function UploadResultModal({
   onGoMap: () => void;
 }) {
   const [entered, setEntered] = useState(false);
-  const [tipText, setTipText] = useState("しばらくお待ちください。");
-
-  useEffect(() => {
-    if (!open || phase !== "loading") return;
-    if (TIP_LIST.length === 0) {
-      setTipText("しばらくお待ちください。");
-      return;
-    }
-    setTipText(TIP_LIST[Math.floor(Math.random() * TIP_LIST.length)]!);
-  }, [open, phase]);
+  const tipText = useRandomTip(open && phase === "loading");
 
   useEffect(() => {
     if (!open) {
@@ -104,16 +90,7 @@ export function UploadResultModal({
                   {`${filesTotal}枚中 ${currentSlot}枚目を送信中…`}
                 </p>
               ) : null}
-              <div className="w-full rounded-xl border border-sky-200/80 bg-gradient-to-br from-sky-50 to-white px-4 py-3.5 shadow-sm">
-                <p className="text-center">
-                  <span className="inline-flex items-center rounded-full bg-sky-600 px-2.5 py-0.5 text-label-sm font-label-sm font-bold tracking-wide text-white">
-                    Tips
-                  </span>
-                </p>
-                <p className="mt-2.5 text-center text-body-lg font-body-lg font-semibold leading-relaxed text-zinc-900">
-                  {tipText}
-                </p>
-              </div>
+              <TipsCard text={tipText} />
               <p className="text-center text-label-md font-label-md text-zinc-600">
                 完了 {uploadedCount} / {filesTotal}
               </p>

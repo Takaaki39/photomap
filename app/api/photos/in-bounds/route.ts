@@ -48,7 +48,7 @@ export async function GET(request: Request) {
 
   const { data, error } = await client
     .from("photos")
-    .select("id, spot_id, storage_url, thumbnail_url, created_at")
+    .select("id, spot_id, storage_url, thumbnail_url, created_at, taken_at")
     .in("spot_id", spotIds)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -63,6 +63,7 @@ export async function GET(request: Request) {
     storage_url: string;
     thumbnail_url: string | null;
     created_at: string;
+    taken_at: string | null;
   }[];
 
   const photos = await Promise.all(
@@ -74,6 +75,7 @@ export async function GET(request: Request) {
         spot_id: row.spot_id,
         image_url: signedThumb ?? signedOriginal,
         created_at: row.created_at,
+        taken_at: row.taken_at,
       };
     }),
   );
