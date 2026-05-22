@@ -80,6 +80,10 @@ export type MapViewHandle = {
   locate: () => void;
 };
 
+// moveend と zoomend は 1 ジェスチャ中に複数回（時には両方）発火するため、
+// ピン再描画/スポット再フィルタは末尾デバウンスでまとめる。
+const VIEWPORT_APPLY_DEBOUNCE_MS = 150;
+
 function MapEventBridge({
   onBoundsChange,
   onViewChange,
@@ -87,16 +91,39 @@ function MapEventBridge({
   onBoundsChange: (map: LeafletMap) => void;
   onViewChange?: (v: { lat: number; lng: number; zoom: number }) => void;
 }) {
+  const timerRef = useRef<number | null>(null);
+  const scheduleApply = useCallback(
+    (map: LeafletMap) => {
+      if (typeof window === "undefined") {
+        onBoundsChange(map);
+        return;
+      }
+      if (timerRef.current != null) window.clearTimeout(timerRef.current);
+      timerRef.current = window.setTimeout(() => {
+        timerRef.current = null;
+        onBoundsChange(map);
+      }, VIEWPORT_APPLY_DEBOUNCE_MS);
+    },
+    [onBoundsChange],
+  );
+  useEffect(
+    () => () => {
+      if (typeof window !== "undefined" && timerRef.current != null) {
+        window.clearTimeout(timerRef.current);
+      }
+    },
+    [],
+  );
   const map = useMapEvents({
     moveend: () => {
-      onBoundsChange(map);
+      scheduleApply(map);
       if (onViewChange) {
         const c = map.getCenter();
         onViewChange({ lat: c.lat, lng: c.lng, zoom: map.getZoom() });
       }
     },
     zoomend: () => {
-      onBoundsChange(map);
+      scheduleApply(map);
       if (onViewChange) {
         const c = map.getCenter();
         onViewChange({ lat: c.lat, lng: c.lng, zoom: map.getZoom() });
@@ -193,12 +220,28 @@ const MapViewClient = forwardRef<
   }, [searchParams]);
 
   const updateMarkers = useCallback((nextSpots: SpotMapItem[]) => {
-    if (!clusterRef.current) return;
-    clusterRef.current.clearLayers();
-    markerByIdRef.current.clear();
+    const cluster = clusterRef.current;
+    if (!cluster) return;
 
+    // パン/ズームのたびに全マーカーを clearLayers → addLayer すると、
+    // 表示数に比例して描画コストが線形に跳ね上がる。
+    // 既存マーカーは ID で再利用し、新規追加・削除分のみを cluster に渡す（差分更新）。
+    const prev = markerByIdRef.current;
+    const next = new Map<string, L.Marker>();
+    const toAdd: L.Marker[] = [];
+    const toRemove: L.Marker[] = [];
     const icon = getMarkerIcon();
-    nextSpots.forEach((spot) => {
+
+    for (const spot of nextSpots) {
+      const existing = prev.get(spot.id);
+      if (existing) {
+        const ll = existing.getLatLng();
+        if (ll.lat !== spot.lat || ll.lng !== spot.lng) {
+          existing.setLatLng([spot.lat, spot.lng]);
+        }
+        next.set(spot.id, existing);
+        continue;
+      }
       const marker = L.marker([spot.lat, spot.lng], { icon });
       (marker.options as Record<string, string>).spotId = spot.id;
       marker.on("click", () => {
@@ -218,9 +261,17 @@ const MapViewClient = forwardRef<
         }
         router.push(`/gallery/${spot.id}`);
       });
-      markerByIdRef.current.set(spot.id, marker);
-      clusterRef.current?.addLayer(marker);
-    });
+      next.set(spot.id, marker);
+      toAdd.push(marker);
+    }
+
+    for (const [id, marker] of prev) {
+      if (!next.has(id)) toRemove.push(marker);
+    }
+
+    if (toRemove.length > 0) cluster.removeLayers(toRemove);
+    if (toAdd.length > 0) cluster.addLayers(toAdd);
+    markerByIdRef.current = next;
   }, [router]);
 
   useImperativeHandle(
@@ -613,6 +664,14 @@ const MapViewClient = forwardRef<
             url="https://{s}.tile.openstreetmap.jp/{z}/{x}/{y}.png"
             subdomains={["a", "b", "c"]}
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://openstreetmap.jp/">OpenStreetMap Japan</a>'
+            // ズーム中はタイル取得をスキップし、ジェスチャ確定後に一括取得する（描画コマ落ち抑制）
+            updateWhenZooming={false}
+            // パン中も即時タイル取得（モバイル既定の "待つ" 挙動を無効化して体感を改善）
+            updateWhenIdle={false}
+            // 画面外バッファを厚く（戻り・近傍ズームでキャッシュヒットしやすくする）
+            keepBuffer={6}
+            // ServiceWorker のレスポンスキャッシュ要件（CORS 経由でも opaque ではなく保存可能にする）
+            crossOrigin="anonymous"
           />
           {prefGeoJson && currentZoom >= 6 ? (
             <GeoJSON data={prefGeoJson as never} style={() => prefStyle} />

@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 import withPWAInit from "next-pwa";
+// next-pwa の既定キャッシュ。これに地図タイル用のルールを先頭追加する。
+import defaultRuntimeCaching from "next-pwa/cache";
 
 const withPWA = withPWAInit({
   dest: "public",
@@ -9,6 +11,27 @@ const withPWA = withPWAInit({
   fallbacks: {
     document: "/offline",
   },
+  // OSM JP のタイルは CDN を持たないため、ServiceWorker で CacheFirst キャッシュして体感を改善する。
+  // 既定のキャッシュは next-pwa/cache をそのまま流用する（順序は workbox の先頭優先一致なので、
+  // タイル用のルールを先頭に置く）。
+  runtimeCaching: [
+    {
+      urlPattern: /^https:\/\/[a-c]\.tile\.openstreetmap\.jp\/.*\.png$/i,
+      handler: "CacheFirst",
+      options: {
+        cacheName: "osm-jp-tiles",
+        expiration: {
+          maxEntries: 4000,
+          // タイルは長期キャッシュ可（OSM 由来データの更新頻度は低い）
+          maxAgeSeconds: 30 * 24 * 60 * 60,
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
+      },
+    },
+    ...defaultRuntimeCaching,
+  ],
 });
 
 const nextConfig: NextConfig = {

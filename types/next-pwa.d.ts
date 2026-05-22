@@ -18,3 +18,9 @@ declare module "next-pwa" {
 
   export default function withPWA(options: PWAOptions): (config: NextConfig) => NextConfig;
 }
+
+declare module "next-pwa/cache" {
+  // workbox の RuntimeCaching 設定はノードコンフィグ側でしか使わないので unknown で十分。
+  const cache: ReadonlyArray<unknown>;
+  export default cache;
+}
