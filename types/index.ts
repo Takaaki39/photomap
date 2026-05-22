@@ -58,6 +58,26 @@ export type Database = {
           created_at?: string;
         };
       };
+      user_tags: {
+        Row: {
+          id: string;
+          user_id: string;
+          tag: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          tag: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          tag?: string;
+          created_at?: string;
+        };
+      };
       photos: {
         Row: {
           id: string;
@@ -70,6 +90,7 @@ export type Database = {
           created_at: string;
           exif_lat: number | null;
           exif_lng: number | null;
+          tag: string | null;
         };
         Insert: {
           id?: string;
@@ -82,6 +103,7 @@ export type Database = {
           created_at?: string;
           exif_lat?: number | null;
           exif_lng?: number | null;
+          tag?: string | null;
         };
         Update: {
           id?: string;
@@ -94,6 +116,7 @@ export type Database = {
           created_at?: string;
           exif_lat?: number | null;
           exif_lng?: number | null;
+          tag?: string | null;
         };
       };
     };

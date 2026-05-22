@@ -12,7 +12,7 @@ export const APP_MAIN_BOTTOM_CLASS = "pb-[88px]";
 /** PhotoMap 共通ヘッダー: 白背景 + ロゴ + プロフィール */
 export function TopNav() {
   return (
-    <header className="fixed top-0 left-0 z-50 flex h-16 w-full items-center justify-between border-b border-[#e5e7eb] bg-white px-4 sm:px-6 md:px-8">
+    <header className="fixed top-0 left-0 z-50 flex h-16 w-full items-center justify-between border-b border-[#e5e7eb] bg-white px-4 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.12),0_2px_4px_-2px_rgba(0,0,0,0.08)] sm:px-6 md:px-8">
       <Link
         href="/"
         className="text-xl font-bold tracking-tight text-[#2563eb] sm:text-[22px]"

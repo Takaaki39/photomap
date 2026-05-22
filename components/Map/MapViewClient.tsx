@@ -16,6 +16,8 @@ import {
   hasAllSpotsSnapshot,
   refreshAllSpotsSnapshot,
 } from "@/lib/spotsBoundsCache";
+import { filterSpotsByTag, type PhotoTagFilter } from "@/lib/photoTag";
+import { filterSpotsByPeriod, type PeriodKey } from "@/lib/spotPeriod";
 
 type DisplayMode =
   | "world"
@@ -134,6 +136,10 @@ const MapViewClient = forwardRef<
     recenterSignal?: number;
     onViewChange?: (v: { lat: number; lng: number; zoom: number }) => void;
     mapWrapClassName?: string;
+    /** ピンの表示期間（スポットの最新写真日時で絞り込む）。未指定/all は絞り込みなし */
+    period?: PeriodKey;
+    /** ピンのタグ絞り込み。"all" または未指定で絞り込みなし */
+    tagFilter?: PhotoTagFilter;
   }
  >(function MapViewClient(
   {
@@ -146,6 +152,8 @@ const MapViewClient = forwardRef<
     recenterSignal,
     onViewChange,
     mapWrapClassName,
+    period,
+    tagFilter,
   },
   ref,
  ) {
@@ -194,6 +202,20 @@ const MapViewClient = forwardRef<
       const marker = L.marker([spot.lat, spot.lng], { icon });
       (marker.options as Record<string, string>).spotId = spot.id;
       marker.on("click", () => {
+        // 戻ってきた時に「押したピン」が中心になるよう、現在ズームを保ったままピン座標を home:lastView に保存。
+        // GPS 自動センタリングが復路で発火しないよう、sessionStorage にスキップフラグを立てる。
+        try {
+          if (typeof window !== "undefined") {
+            const z = mapRef.current?.getZoom() ?? INITIAL_ZOOM;
+            window.localStorage.setItem(
+              "home:lastView",
+              JSON.stringify({ lat: spot.lat, lng: spot.lng, zoom: z, t: Date.now() }),
+            );
+            window.sessionStorage.setItem("home:skipNextRelocate", "1");
+          }
+        } catch {
+          // ignore
+        }
         router.push(`/gallery/${spot.id}`);
       });
       markerByIdRef.current.set(spot.id, marker);
@@ -392,12 +414,31 @@ const MapViewClient = forwardRef<
               .filter((id): id is string => Boolean(id)),
           ),
         ];
+
+        // ギャラリーへ遷移する場合のみ、戻った時にクラスタ中心へ戻れるよう lastView を上書きする。
+        const persistClusterCenter = () => {
+          try {
+            if (typeof window === "undefined") return;
+            const center = cluster.getLatLng();
+            const z = mapRef.current?.getZoom() ?? INITIAL_ZOOM;
+            window.localStorage.setItem(
+              "home:lastView",
+              JSON.stringify({ lat: center.lat, lng: center.lng, zoom: z, t: Date.now() }),
+            );
+            window.sessionStorage.setItem("home:skipNextRelocate", "1");
+          } catch {
+            // ignore
+          }
+        };
+
         if (ids.length >= 2) {
+          persistClusterCenter();
           const galleryId = `cluster:spots~${ids.join("~")}`;
           router.push(`/gallery/${encodeURIComponent(galleryId)}`);
           return;
         }
         if (ids.length === 1) {
+          persistClusterCenter();
           router.push(`/gallery/${ids[0]}`);
           return;
         }
@@ -421,12 +462,18 @@ const MapViewClient = forwardRef<
 
   const visibleSpots = useMemo(() => {
     const keyword = (query ?? "").trim().toLowerCase();
-    if (!keyword) return spots;
-    return spots.filter((s) => {
-      const hay = `${s.name} ${s.address ?? ""}`.toLowerCase();
-      return hay.includes(keyword);
-    });
-  }, [spots, query]);
+    const byKeyword = keyword
+      ? spots.filter((s) => {
+          const hay = `${s.name} ${s.address ?? ""}`.toLowerCase();
+          return hay.includes(keyword);
+        })
+      : spots;
+    const byPeriod =
+      !period || period === "all" ? byKeyword : filterSpotsByPeriod(byKeyword, period);
+    const byTag =
+      !tagFilter || tagFilter === "all" ? byPeriod : filterSpotsByTag(byPeriod, tagFilter);
+    return byTag;
+  }, [spots, query, period, tagFilter]);
 
   useEffect(() => {
     if (!mapReady) return;
@@ -558,6 +605,7 @@ const MapViewClient = forwardRef<
                 : INITIAL_ZOOM
           }
           minZoom={2}
+          zoomControl={false}
           style={{ height: "100%", width: "100%" }}
         >
           <TileLayer
@@ -575,16 +623,6 @@ const MapViewClient = forwardRef<
         </MapContainer>
       </div>
 
-      {/* Leaflet ズームの直下に倍率（ズームレベル）を表示。位置は --map-header-offset + コントロール高に合わせる */}
-      <div
-        className="pointer-events-none absolute left-[10px] z-[1000] min-w-[3.25rem] rounded-md border border-outline-variant/70 bg-surface/95 px-2 py-1.5 text-center shadow-md backdrop-blur-sm bg-black"
-        style={{ top: "calc(var(--map-header-offset) + 3.85rem)" }}
-      >
-        <div className="text-[10px] font-semibold uppercase leading-none tracking-wide text-on-surface-variant">倍率</div>
-        <div className="text-headline-md font-headline-md tabular-nums leading-tight text-on-surface">
-          {Number.isFinite(currentZoom) ? currentZoom : "—"}
-        </div>
-      </div>
     </section>
   );
 });

@@ -22,6 +22,12 @@ type PhotoRow = {
   users: { display_name: string | null } | null;
 };
 
+type SpotInfoRow = {
+  id: string;
+  name: string;
+  address: string | null;
+};
+
 export async function GET(request: Request) {
   const session = await getServerAuthSession();
   if (!session?.user?.id) {
@@ -56,13 +62,28 @@ export async function GET(request: Request) {
   const rows = (data ?? []) as unknown as PhotoRow[];
   const visible = rows.filter((row) => row.is_public || row.user_id === viewerId);
 
+  const { data: spotsData, error: spotsError } = await client
+    .from("spots")
+    .select("id, name, address")
+    .in("id", spotIds);
+  if (spotsError) {
+    return NextResponse.json({ error: spotsError.message }, { status: 500 });
+  }
+  const spotInfoMap = new Map<string, { name: string; address: string | null }>();
+  for (const s of (spotsData ?? []) as unknown as SpotInfoRow[]) {
+    spotInfoMap.set(s.id, { name: s.name, address: s.address ?? null });
+  }
+
   const photos = await Promise.all(
     visible.map(async (row) => {
       const signedThumb = await createSignedPhotoUrl(row.thumbnail_url, 3600);
       const signedOriginal = await createSignedPhotoUrl(row.storage_url, 3600);
+      const info = spotInfoMap.get(row.spot_id) ?? null;
       return {
         id: row.id,
         spot_id: row.spot_id,
+        spot_name: info?.name ?? null,
+        spot_address: info?.address ?? null,
         image_url: signedThumb ?? signedOriginal,
         created_at: row.created_at,
         taken_at: row.taken_at,

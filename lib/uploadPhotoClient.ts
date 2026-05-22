@@ -14,6 +14,8 @@ export async function uploadPhotoViaStorage(params: {
   lng: number;
   placeName: string;
   isPublic: boolean;
+  /** 写真タグ（ビルトイン slug またはユーザーの任意文字列）。null は未タグ */
+  tag: string | null;
 }): Promise<UploadPhotoResult> {
   const takenAt = await extractDateTakenFromExif(params.file);
 
@@ -76,6 +78,7 @@ export async function uploadPhotoViaStorage(params: {
       is_public: params.isPublic,
       taken_at: takenAt,
       content_type: contentType,
+      tag: params.tag,
     }),
   });
 

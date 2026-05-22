@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isPhotoTag } from "@/lib/photoTag";
 import { createSignedPhotoUrl } from "@/lib/photoUrl";
 import {
   insertPhotoRow,
@@ -22,6 +23,7 @@ export async function POST(request: Request) {
       is_public?: boolean;
       taken_at?: string | null;
       content_type?: string;
+      tag?: string | null;
     };
 
     const storagePath = String(body.storage_path ?? "");
@@ -46,8 +48,12 @@ export async function POST(request: Request) {
     }
 
     const isPublic = body.is_public !== false;
-    const takenAt =
+    // 撮影日: クライアント抽出を優先し、無ければサーバー側で EXIF から抽出したものをフォールバック
+    const clientTakenAt =
       typeof body.taken_at === "string" && body.taken_at ? body.taken_at : null;
+    const takenAt = clientTakenAt ?? stripped.takenAt ?? null;
+    // タグ: 未指定または不正値は null（未タグ）として扱う
+    const tag = isPhotoTag(body.tag) ? body.tag : null;
 
     const inserted = await insertPhotoRow({
       user_id: auth.appUserId,
@@ -58,6 +64,7 @@ export async function POST(request: Request) {
       taken_at: takenAt,
       exif_lat: lat,
       exif_lng: lng,
+      tag,
     });
 
     if ("error" in inserted) {

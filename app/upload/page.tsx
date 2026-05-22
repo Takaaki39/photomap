@@ -7,8 +7,9 @@ import { refreshAllSpotsSnapshot } from "@/lib/spotsBoundsCache";
 import { uploadPhotoViaStorage } from "@/lib/uploadPhotoClient";
 import { UploadResultModal } from "@/components/Upload/UploadResultModal";
 import { UploadFileDrop } from "@/components/Upload/UploadFileDrop";
-import { UploadMapCard } from "@/components/Upload/UploadMapCard";
+import { UploadLocationCard } from "@/components/Upload/UploadLocationCard";
 import { UploadPreview } from "@/components/Upload/UploadPreview";
+import { UploadTagPicker } from "@/components/Upload/UploadTagPicker";
 import { BottomNav } from "@/components/Nav/BottomNav";
 import { APP_MAIN_BOTTOM_CLASS, APP_MAIN_TOP_CLASS, TopNav } from "@/components/Nav/TopNav";
 
@@ -43,22 +44,23 @@ export default function UploadPage() {
 
   const [stage, setStage] = useState<Stage>("select");
   const [files, setFiles] = useState<File[]>([]);
+  // files と長さ・順序が一致する各写真の EXIF GPS。GPS 無しのファイルは選択時に除外している
+  const [gpsList, setGpsList] = useState<Array<{ lat: number; lng: number }>>([]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
   const [isPublic] = useState(true);
   const [placeName, setPlaceName] = useState("");
+  const [tag, setTag] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ spot_id: string; photo_id: string; lat?: number; lng?: number } | null>(null);
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
   const [uploadedCount, setUploadedCount] = useState(0);
 
   const canProceed = useMemo(() => {
-    if (files.length === 0) return false;
-    if (gps) return true;
-    return false;
-  }, [files.length, gps]);
+    return files.length > 0 && gpsList.length === files.length;
+  }, [files.length, gpsList.length]);
 
   const activeFile = useMemo(() => files[activeIndex] ?? null, [files, activeIndex]);
+  const activeGps = useMemo(() => gpsList[activeIndex] ?? null, [gpsList, activeIndex]);
 
   const previewUrl = useMemo(() => {
     if (!activeFile) return null;
@@ -82,12 +84,13 @@ export default function UploadPage() {
 
   const resetAll = () => {
     setFiles([]);
+    setGpsList([]);
     setActiveIndex(0);
-    setGps(null);
     setStage("select");
     setResult(null);
     setUploadingIndex(null);
     setUploadedCount(0);
+    setTag(null);
   };
 
   const onPickFiles = async (picked: File[]) => {
@@ -107,20 +110,20 @@ export default function UploadPage() {
       }
     }
 
-    // EXIF(GPS)が無い写真はアップロード対象から除外する
-    const withExif: File[] = [];
+    // EXIF(GPS)が無い写真はアップロード対象から除外する。GPS は写真ごとに保持する
+    const accepted: Array<{ file: File; gps: { lat: number; lng: number } }> = [];
     const withoutExif: string[] = [];
     for (const f of picked) {
       try {
         const g = await extractGpsFromExif(f);
-        if (g) withExif.push(f);
+        if (g) accepted.push({ file: f, gps: g });
         else withoutExif.push(f.name);
       } catch {
         withoutExif.push(f.name);
       }
     }
 
-    if (withExif.length === 0) {
+    if (accepted.length === 0) {
       const msg =
         "位置情報（EXIF）がある写真が見つかりませんでした。位置情報付きの写真を選択してください。";
       if (keepOnPickFailure) setError(msg);
@@ -131,36 +134,21 @@ export default function UploadPage() {
       return;
     }
 
-    setFiles(withExif);
+    setFiles(accepted.map((a) => a.file));
+    setGpsList(accepted.map((a) => a.gps));
     setActiveIndex(0);
     setStage("review");
-    void formatLocalDateTime(withExif[0] ?? null);
-
-    // まとめて投稿の基準位置は「1枚目のEXIF(GPS)」
-    try {
-      const g = await extractGpsFromExif(withExif[0] as File);
-      setGps(g);
-    } catch {
-      setGps(null);
-    }
+    // ローカル日時の整形は副作用無し（プレビューラベル用途で残存）
+    void formatLocalDateTime(accepted[0]?.file ?? null);
 
     if (withoutExif.length > 0) {
       setError(`位置情報（EXIF）が無いので除外しました: ${withoutExif.slice(0, 5).join("、")}${withoutExif.length > 5 ? ` ほか${withoutExif.length - 5}件` : ""}`);
     }
   };
 
-  useEffect(() => {
-    if (files.length === 0) return;
-    if (gps) return;
-    if (stage === "uploading" || stage === "done") return;
-
-    // この画面は「EXIF(GPS)必須」なので、端末GPS/IPフォールバックは使わない
-    // （メタ情報なし写真が通ってしまうのを防ぐため）
-  }, [files.length, gps, stage]);
-
   const lastAutoFillKeyRef = useRef<string>("");
   useEffect(() => {
-    const chosen = gps;
+    const chosen = activeGps;
     if (!chosen) return;
 
     const key = `${chosen.lat.toFixed(6)},${chosen.lng.toFixed(6)}`;
@@ -188,7 +176,7 @@ export default function UploadPage() {
         // ignore
       }
     })();
-  }, [gps, placeName]);
+  }, [activeGps, placeName]);
 
   const onDrop: React.DragEventHandler<HTMLDivElement> = async (e) => {
     e.preventDefault();
@@ -208,19 +196,36 @@ export default function UploadPage() {
     setError(null);
     setUploadedCount(0);
 
-    const chosen = gps;
+    const isBatch = files.length > 1;
+    // Nominatim 利用規約: 1 req/sec。サーバ側 reverse-geocode は写真ごとに走るため、
+    // バッチ時はクライアントで 1 枚ごとの開始間隔を 1.1 秒以上空けてレートを守る。
+    const REVERSE_GEOCODE_MIN_INTERVAL_MS = 1100;
+    let lastStartedAt = 0;
 
     for (let i = 0; i < files.length; i += 1) {
-      const file = files[i] as File;
+      const file = files[i];
+      const photoGps = gpsList[i];
+      if (!file || !photoGps) continue;
+
+      if (i > 0) {
+        const since = Date.now() - lastStartedAt;
+        if (since < REVERSE_GEOCODE_MIN_INTERVAL_MS) {
+          await new Promise((r) => setTimeout(r, REVERSE_GEOCODE_MIN_INTERVAL_MS - since));
+        }
+      }
+      lastStartedAt = Date.now();
       setUploadingIndex(i);
 
       try {
         const payload = await uploadPhotoViaStorage({
           file,
-          lat: chosen!.lat,
-          lng: chosen!.lng,
-          placeName,
+          // 各写真の EXIF GPS をそのまま使う（まとめてアップロードでも 1 枚目の位置に寄せない）
+          lat: photoGps.lat,
+          lng: photoGps.lng,
+          // バッチ時は手入力 placeName を全写真に流用するとスポット名がズレるため、空文字でサーバ側 reverse-geocode に任せる
+          placeName: isBatch ? "" : placeName,
           isPublic,
+          tag,
         });
 
         setUploadedCount((c) => c + 1);
@@ -294,7 +299,11 @@ export default function UploadPage() {
 
           <aside className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24">
             <div className="flex flex-col gap-4">
-              <UploadMapCard gps={gps} manualLocation={null} />
+              <UploadLocationCard gps={activeGps} />
+
+              {stage === "review" ? (
+                <UploadTagPicker value={tag} onChange={setTag} />
+              ) : null}
 
               {stage === "review" && files.length > 1 ? (
                 <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-3 text-body-md font-body-md">

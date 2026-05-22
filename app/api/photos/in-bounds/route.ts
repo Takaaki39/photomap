@@ -41,9 +41,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: spotsError.message }, { status: 500 });
   }
 
-  const spotIds = ((spotsData ?? []) as { id: string }[]).map((s) => s.id);
+  const spotsRows = (spotsData ?? []) as { id: string; name: string; address: string | null }[];
+  const spotIds = spotsRows.map((s) => s.id);
   if (spotIds.length === 0) {
     return NextResponse.json({ photos: [], total: 0 });
+  }
+  const spotInfoMap = new Map<string, { name: string; address: string | null }>();
+  for (const s of spotsRows) {
+    spotInfoMap.set(s.id, { name: s.name, address: s.address ?? null });
   }
 
   const { data, error } = await client
@@ -70,9 +75,12 @@ export async function GET(request: Request) {
     rows.map(async (row) => {
       const signedThumb = await createSignedPhotoUrl(row.thumbnail_url, 3600);
       const signedOriginal = await createSignedPhotoUrl(row.storage_url, 3600);
+      const info = spotInfoMap.get(row.spot_id) ?? null;
       return {
         id: row.id,
         spot_id: row.spot_id,
+        spot_name: info?.name ?? null,
+        spot_address: info?.address ?? null,
         image_url: signedThumb ?? signedOriginal,
         created_at: row.created_at,
         taken_at: row.taken_at,

@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import { getServerAuthSession } from "@/lib/auth";
+import { extractDateTakenFromBuffer } from "@/lib/exif";
 import { reverseGeocode } from "@/lib/geocode";
 import { matchOrCreateSpot } from "@/lib/spotMatcher";
 import { createSupabaseAdminClient } from "@/lib/supabase";
@@ -101,6 +102,10 @@ export async function stripExifAndReupload(storagePath: string, contentType: str
   }
 
   const fileBuffer = new Uint8Array(await blob.arrayBuffer());
+
+  // EXIF を消す前に、サーバー側でも撮影日を抽出してフォールバックに使う
+  const exifTakenAt = await extractDateTakenFromBuffer(fileBuffer);
+
   let sanitizedBuffer: Uint8Array = fileBuffer;
   try {
     sanitizedBuffer = new Uint8Array(await sharp(fileBuffer).rotate().toBuffer());
@@ -117,7 +122,7 @@ export async function stripExifAndReupload(storagePath: string, contentType: str
     return { error: uploadError.message };
   }
 
-  return { ok: true as const };
+  return { ok: true as const, takenAt: exifTakenAt };
 }
 
 export async function insertPhotoRow(payload: Database["public"]["Tables"]["photos"]["Insert"]) {

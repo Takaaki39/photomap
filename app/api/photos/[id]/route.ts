@@ -8,7 +8,10 @@ type RouteContext = {
 };
 
 type PhotoOwnerRow = Pick<Database["public"]["Tables"]["photos"]["Row"], "id" | "user_id">;
-type PhotoDeleteRow = Pick<Database["public"]["Tables"]["photos"]["Row"], "id" | "user_id" | "storage_url" | "thumbnail_url">;
+type PhotoDeleteRow = Pick<
+  Database["public"]["Tables"]["photos"]["Row"],
+  "id" | "user_id" | "storage_url" | "thumbnail_url" | "spot_id"
+>;
 
 export async function PATCH(request: Request, context: RouteContext) {
   const session = await getServerAuthSession();
@@ -51,7 +54,7 @@ export async function DELETE(_: Request, context: RouteContext) {
 
   const { data: row, error: rowError } = await admin
     .from("photos")
-    .select("id, user_id, storage_url, thumbnail_url")
+    .select("id, user_id, storage_url, thumbnail_url, spot_id")
     .eq("id", id)
     .maybeSingle();
   if (rowError) return NextResponse.json({ error: rowError.message }, { status: 500 });
@@ -68,5 +71,16 @@ export async function DELETE(_: Request, context: RouteContext) {
 
   const { error } = await admin.from("photos").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  if (deleteRow.spot_id) {
+    const { count, error: countError } = await admin
+      .from("photos")
+      .select("id", { count: "exact", head: true })
+      .eq("spot_id", deleteRow.spot_id);
+    if (!countError && (count ?? 0) === 0) {
+      await admin.from("spots").delete().eq("id", deleteRow.spot_id);
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }

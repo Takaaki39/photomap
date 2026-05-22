@@ -52,6 +52,8 @@ export function ProfilePageClient() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"gallery" | "favorites" | "maps">("gallery");
   const [activePhotoId, setActivePhotoId] = useState<string | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
 
   const fetchPhotos = useCallback(async () => {
     const res = await fetch("/api/me/photos", { cache: "no-store" });
@@ -141,6 +143,56 @@ export function ProfilePageClient() {
     }
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
     if (activePhotoId === photoId) setActivePhotoId(null);
+    void refreshAllSpotsSnapshot();
+  };
+
+  /** 仮機能: 自分の全写真を一括削除する */
+  const bulkDeleteAll = async () => {
+    if (bulkDeleting) return;
+    const total = photos.length;
+    if (total === 0) return;
+    const ok = confirm(
+      `自分の写真 ${total} 枚をすべて削除します。\n` +
+        "クラウド上の画像も削除され、元に戻せません。\n本当に実行しますか？",
+    );
+    if (!ok) return;
+
+    setBulkDeleting(true);
+    setBulkProgress({ done: 0, total });
+    setError(null);
+
+    const ids = photos.map((p) => p.id);
+    const failures: string[] = [];
+    const CONCURRENCY = 6;
+    let cursor = 0;
+    let done = 0;
+
+    const worker = async () => {
+      while (cursor < ids.length) {
+        const i = cursor;
+        cursor += 1;
+        const id = ids[i] as string;
+        try {
+          const res = await fetch(`/api/photos/${id}`, { method: "DELETE" });
+          if (!res.ok) failures.push(id);
+        } catch {
+          failures.push(id);
+        }
+        done += 1;
+        setBulkProgress({ done, total });
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, ids.length) }, () => worker()));
+
+    const succeededIds = new Set(ids.filter((id) => !failures.includes(id)));
+    setPhotos((prev) => prev.filter((p) => !succeededIds.has(p.id)));
+    setActivePhotoId(null);
+    setBulkDeleting(false);
+    setBulkProgress(null);
+    if (failures.length > 0) {
+      setError(`${failures.length} 件の削除に失敗しました。再度お試しください。`);
+    }
     void refreshAllSpotsSnapshot();
   };
 
@@ -254,7 +306,23 @@ export function ProfilePageClient() {
 
           {showRecent ? (
             <section className="mb-12 mt-8">
-              <h2 className="mb-6 text-xl font-bold text-[#111827]">最近の投稿</h2>
+              <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-xl font-bold text-[#111827]">最近の投稿</h2>
+                {photosNewestFirst.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => void bulkDeleteAll()}
+                    disabled={bulkDeleting}
+                    className="inline-flex items-center gap-2 rounded-lg border border-[#fca5a5] bg-white px-3 py-1.5 text-sm font-medium text-[#dc2626] shadow-sm transition-colors hover:bg-[#fef2f2] disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-label="自分の写真を全削除（仮）"
+                    title="開発用の仮ボタン: 自分の写真を全削除"
+                  >
+                    {bulkDeleting && bulkProgress
+                      ? `削除中… ${bulkProgress.done}/${bulkProgress.total}`
+                      : `全削除（仮・${photosNewestFirst.length}枚）`}
+                  </button>
+                ) : null}
+              </div>
               {photosNewestFirst.length === 0 ? (
                 <p className="text-[15px] text-[#6b7280]">まだ写真がありません。</p>
               ) : (

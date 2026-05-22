@@ -14,6 +14,10 @@ export type SpotMapItem = {
   lng: number;
   photo_count: number;
   thumbnail_url: string | null;
+  /** スポットに紐づく最新写真の日時（taken_at 優先、無ければ created_at）。ISO 文字列 */
+  latest_photo_at: string | null;
+  /** スポット配下の写真が持つタグ集合（重複排除）。タグ未付与の写真は含まれない */
+  tags: string[];
 };
 
 const WORLD_BOUNDS = {

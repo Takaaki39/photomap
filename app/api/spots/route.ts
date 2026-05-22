@@ -78,7 +78,7 @@ export async function GET(request: Request) {
 
   const { data: photosData, error: photosError } = await client
     .from("photos")
-    .select("spot_id, storage_url, thumbnail_url, created_at")
+    .select("spot_id, storage_url, thumbnail_url, taken_at, created_at, tag")
     .in("spot_id", spotIds)
     .order("created_at", { ascending: false });
   if (photosError) {
@@ -88,25 +88,51 @@ export async function GET(request: Request) {
     spot_id: string;
     storage_url: string;
     thumbnail_url: string | null;
+    taken_at: string | null;
     created_at: string;
+    tag: string | null;
   }[];
 
   const photoMap = new Map<
     string,
-    { photo_count: number; thumbnail_url: string | null; storage_url: string | null }
+    {
+      photo_count: number;
+      thumbnail_url: string | null;
+      storage_url: string | null;
+      latest_photo_at: string | null;
+      tags: Set<string>;
+    }
   >();
 
   photos.forEach((photo) => {
+    // 期間フィルタ用の代表日時: 撮影日(EXIF) 優先、無ければ投稿日
+    const photoDate = photo.taken_at ?? photo.created_at;
     const current = photoMap.get(photo.spot_id);
     if (!current) {
+      const tags = new Set<string>();
+      if (photo.tag) tags.add(photo.tag);
       photoMap.set(photo.spot_id, {
         photo_count: 1,
         thumbnail_url: photo.thumbnail_url,
         storage_url: photo.storage_url,
+        latest_photo_at: photoDate,
+        tags,
       });
       return;
     }
     current.photo_count += 1;
+    if (photo.tag) current.tags.add(photo.tag);
+    // クエリは created_at desc 順なので thumbnail はそのまま（最新投稿の画像）。
+    // latest_photo_at は taken_at 優先で最大値を計算する。
+    if (current.latest_photo_at) {
+      const currentTs = new Date(current.latest_photo_at).getTime();
+      const newTs = new Date(photoDate).getTime();
+      if (Number.isFinite(newTs) && (!Number.isFinite(currentTs) || newTs > currentTs)) {
+        current.latest_photo_at = photoDate;
+      }
+    } else {
+      current.latest_photo_at = photoDate;
+    }
   });
 
   const spots = await Promise.all(
@@ -123,6 +149,8 @@ export async function GET(request: Request) {
         photo_count: media?.photo_count ?? 0,
         thumbnail_url: media?.thumbnail_url ?? null,
         storage_url: media?.storage_url ?? null,
+        latest_photo_at: media?.latest_photo_at ?? null,
+        tags: media ? Array.from(media.tags) : [],
       };
     })
     .filter((spot): spot is NonNullable<typeof spot> => Boolean(spot))
@@ -132,7 +160,14 @@ export async function GET(request: Request) {
       const signedThumb = await createSignedPhotoUrl(spot.thumbnail_url, 3600);
       const signedOriginal = await createSignedPhotoUrl(spot.storage_url, 3600);
       return {
-        ...spot,
+        id: spot.id,
+        name: spot.name,
+        address: spot.address,
+        lat: spot.lat,
+        lng: spot.lng,
+        photo_count: spot.photo_count,
+        latest_photo_at: spot.latest_photo_at,
+        tags: spot.tags,
         thumbnail_url: signedThumb ?? signedOriginal,
       };
     })

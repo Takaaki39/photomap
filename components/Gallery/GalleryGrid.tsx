@@ -84,7 +84,7 @@ export function GalleryGrid({
               <div className="mb-1 flex min-w-0 items-center gap-1.5">
                 <span className="shrink-0 text-label-sm font-label-sm font-semibold text-primary">場所</span>
                 <span className="truncate text-label-sm font-label-sm text-on-surface">
-                  {spot?.name ?? "スポット"}
+                  {photo.spot_name ?? spot?.name ?? "スポット"}
                 </span>
               </div>
               <p className="text-label-sm font-label-sm text-outline">{formatGalleryPhotoDate(photo)}</p>
@@ -146,7 +146,7 @@ export function GalleryGrid({
       <PhotoLightbox
         open={Boolean(activePhoto?.image_url)}
         src={activePhoto?.image_url ?? null}
-        alt={spot?.name ?? ""}
+        alt={activePhoto?.spot_name ?? spot?.name ?? ""}
         onClose={() => setActiveId(null)}
       />
     </>
