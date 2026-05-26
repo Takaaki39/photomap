@@ -42,7 +42,7 @@ export function GalleryGrid({
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 md:gap-5 lg:grid-cols-4">
+      <div className="px-2 sm:px-0 grid grid-cols-2 gap-4 md:grid-cols-3 md:gap-5 lg:grid-cols-4">
         {photos.map((photo) => {
         const isSelected = selected.has(photo.id);
         const cardRing =

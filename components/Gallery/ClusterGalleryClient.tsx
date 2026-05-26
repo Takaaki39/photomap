@@ -6,22 +6,14 @@ import { APP_MAIN_BOTTOM_CLASS, APP_MAIN_TOP_CLASS, TopNav } from "@/components/
 import { GalleryGrid } from "@/components/Gallery/GalleryGrid";
 import type { GalleryPhoto, GallerySpot } from "@/components/Gallery/types";
 import { refreshAllSpotsSnapshot } from "@/lib/spotsBoundsCache";
+import { readHomeMapView } from "@/lib/homeMapView";
 
 function cellSizeFromZoom(zoom: number) {
   return zoom <= 3 ? 8 : zoom <= 6 ? 3 : zoom <= 9 ? 1 : zoom <= 12 ? 0.3 : zoom <= 15 ? 0.08 : 0;
 }
 
 function readLastZoom(): number {
-  if (typeof window === "undefined") return 11;
-  try {
-    const raw = window.localStorage.getItem("home:lastView");
-    if (!raw) return 11;
-    const d = JSON.parse(raw) as { zoom?: number };
-    if (typeof d.zoom !== "number" || !Number.isFinite(d.zoom)) return 11;
-    return Math.max(2, Math.min(18, d.zoom));
-  } catch {
-    return 11;
-  }
+  return readHomeMapView()?.zoom ?? 11;
 }
 
 export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {

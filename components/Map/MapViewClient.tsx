@@ -1,14 +1,12 @@
 "use client";
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import type { Icon, Map as LeafletMap } from "leaflet";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import type { Map as LeafletMap } from "leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster";
-import "leaflet.markercluster/dist/MarkerCluster.css";
-import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import { useRouter, useSearchParams } from "next/navigation";
-import { GeoJSON, MapContainer, TileLayer, useMapEvents } from "react-leaflet";
+import { GeoJSON, MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import {
   type SpotMapItem,
   filterSpotsInBounds,
@@ -16,6 +14,12 @@ import {
   hasAllSpotsSnapshot,
   refreshAllSpotsSnapshot,
 } from "@/lib/spotsBoundsCache";
+import { getMapPinDivIcon, setMarkerOverlayIcon, type MapPinOverlayKey } from "@/lib/mapPinIcon";
+import {
+  isPersistableHomeMapView,
+  readHomeMapView,
+  writeHomeMapView,
+} from "@/lib/homeMapView";
 import { filterSpotsByTag, type PhotoTagFilter } from "@/lib/photoTag";
 import { filterSpotsByPeriod, type PeriodKey } from "@/lib/spotPeriod";
 
@@ -33,23 +37,6 @@ const INITIAL_ZOOM = 11;
 
 const PREF_BORDERS_URL = "https://raw.githubusercontent.com/four4to6/47-prefectures/master/data/prefectures.geojson";
 
-function readPersistedHomeView(): { lat: number; lng: number; zoom: number } | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem("home:lastView");
-    if (!raw) return null;
-    const d = JSON.parse(raw) as { lat?: unknown; lng?: unknown; zoom?: unknown };
-    const lat = typeof d.lat === "number" ? d.lat : null;
-    const lng = typeof d.lng === "number" ? d.lng : null;
-    const zoom = typeof d.zoom === "number" ? d.zoom : null;
-    if (lat == null || lng == null || zoom == null) return null;
-    if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(zoom)) return null;
-    return { lat, lng, zoom: Math.max(2, Math.min(18, zoom)) };
-  } catch {
-    return null;
-  }
-}
-
 function getDisplayModeByZoom(zoom: number): DisplayMode {
   if (zoom <= 3) return "world";
   if (zoom <= 6) return "country";
@@ -58,21 +45,6 @@ function getDisplayModeByZoom(zoom: number): DisplayMode {
   if (zoom <= 15) return "city";
   if (zoom >= 16) return "detail";
   return "spot";
-}
-
-// 全ピンで同一のアイコンを使い回すことで、画像取得とDOM構築コストを最小化する。
-// viewBox 底中央 (60,85) を地理座標のアンカーとする（本体 rect の下端）。
-let sharedMarkerIcon: Icon | null = null;
-function getMarkerIcon(): Icon {
-  if (!sharedMarkerIcon) {
-    sharedMarkerIcon = L.icon({
-      iconUrl: "/map-pin.svg",
-      iconSize: [40, 40],
-      iconAnchor: [20, (85 * 40) / 120],
-      popupAnchor: [0, (-85 * 40) / 120],
-    });
-  }
-  return sharedMarkerIcon;
 }
 
 export type MapViewHandle = {
@@ -151,12 +123,49 @@ function ModeSync({ onZoom }: { onZoom: (zoom: number) => void }) {
   return null;
 }
 
+/** invalidateSize 後も保存済みビューへ戻す（コンテナ 0px 初期化による世界地図化を防ぐ） */
+function RestoreMapView({
+  view,
+  viewSaveEnabledRef,
+}: {
+  view: { lat: number; lng: number; zoom: number };
+  viewSaveEnabledRef: RefObject<boolean>;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    let cancelled = false;
+    viewSaveEnabledRef.current = false;
+
+    const apply = () => {
+      if (cancelled) return;
+      map.setView([view.lat, view.lng], view.zoom, { animate: false });
+    };
+
+    apply();
+    const raf = window.requestAnimationFrame(() => {
+      map.invalidateSize({ pan: false });
+      apply();
+      window.setTimeout(() => {
+        if (!cancelled) viewSaveEnabledRef.current = true;
+      }, 400);
+    });
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(raf);
+      viewSaveEnabledRef.current = false;
+    };
+  }, [map, view.lat, view.lng, view.zoom, viewSaveEnabledRef]);
+
+  return null;
+}
+
 const MapViewClient = forwardRef<
   MapViewHandle,
   {
     query?: string;
     showInternalControls?: boolean;
-    requestedZoom?: number;
     locateSignal?: number;
     initialCenter?: { lat: number; lng: number } | null;
     initialZoom?: number;
@@ -167,12 +176,13 @@ const MapViewClient = forwardRef<
     period?: PeriodKey;
     /** ピンのタグ絞り込み。"all" または未指定で絞り込みなし */
     tagFilter?: PhotoTagFilter;
+    /** ピンベース上に重ねるアイコン（lib/mapPinIcon.ts の MAP_PIN_OVERLAYS） */
+    pinOverlay?: MapPinOverlayKey;
   }
- >(function MapViewClient(
+>(function MapViewClient(
   {
     query,
     showInternalControls = true,
-    requestedZoom,
     locateSignal,
     initialCenter,
     initialZoom,
@@ -181,6 +191,7 @@ const MapViewClient = forwardRef<
     mapWrapClassName,
     period,
     tagFilter,
+    pinOverlay = "default",
   },
   ref,
  ) {
@@ -198,13 +209,69 @@ const MapViewClient = forwardRef<
   const mapWrapRef = useRef<HTMLDivElement | null>(null);
   const clusterRef = useRef<L.MarkerClusterGroup | null>(null);
   const markerByIdRef = useRef<Map<string, L.Marker>>(new Map());
+  const pinOverlayRef = useRef<MapPinOverlayKey>("default");
   const focusAppliedRef = useRef(false);
   const autoOpenAppliedRef = useRef(false);
   const dismissedFocusRef = useRef(false);
   const inFlightFetchKeyRef = useRef<string | null>(null);
+  const viewSaveEnabledRef = useRef(false);
+  const lastKnownViewRef = useRef<{ lat: number; lng: number; zoom: number } | null>(null);
   const [currentZoom, setCurrentZoom] = useState<number>(INITIAL_ZOOM);
-  const persistedView = useMemo(() => readPersistedHomeView(), []);
+  const bootView = useMemo(() => readHomeMapView(), []);
   const [prefGeoJson, setPrefGeoJson] = useState<unknown | null>(null);
+  const [containerReady, setContainerReady] = useState(false);
+
+  const restoreTargetView = useMemo(() => {
+    const saved = bootView ?? readHomeMapView();
+    const lat =
+      typeof initialCenter?.lat === "number" && Number.isFinite(initialCenter.lat)
+        ? initialCenter.lat
+        : saved?.lat ?? INITIAL_CENTER[0];
+    const lng =
+      typeof initialCenter?.lng === "number" && Number.isFinite(initialCenter.lng)
+        ? initialCenter.lng
+        : saved?.lng ?? INITIAL_CENTER[1];
+    const zoom =
+      typeof initialZoom === "number" && Number.isFinite(initialZoom)
+        ? initialZoom
+        : saved?.zoom ?? INITIAL_ZOOM;
+    return { lat, lng, zoom };
+  }, [bootView, initialCenter, initialZoom]);
+
+  useLayoutEffect(() => {
+    const el = mapWrapRef.current;
+    if (!el) return;
+
+    const check = () => {
+      const { width, height } = el.getBoundingClientRect();
+      if (width > 0 && height > 0) setContainerReady(true);
+    };
+
+    check();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (bootView && isPersistableHomeMapView(bootView)) lastKnownViewRef.current = bootView;
+  }, [bootView]);
+
+  const persistView = useCallback((view: { lat: number; lng: number; zoom: number }) => {
+    if (!isPersistableHomeMapView(view)) return;
+    lastKnownViewRef.current = view;
+    writeHomeMapView(view);
+  }, []);
+
+  const handleViewChange = useCallback(
+    (v: { lat: number; lng: number; zoom: number }) => {
+      if (!viewSaveEnabledRef.current) return;
+      persistView(v);
+      onViewChange?.(v);
+    },
+    [onViewChange, persistView],
+  );
 
   const focus = useMemo(() => {
     const spotId = searchParams.get("spot_id") ?? "";
@@ -230,7 +297,9 @@ const MapViewClient = forwardRef<
     const next = new Map<string, L.Marker>();
     const toAdd: L.Marker[] = [];
     const toRemove: L.Marker[] = [];
-    const icon = getMarkerIcon();
+    const icon = getMapPinDivIcon(pinOverlay);
+    const overlayChanged = pinOverlayRef.current !== pinOverlay;
+    if (overlayChanged) pinOverlayRef.current = pinOverlay;
 
     for (const spot of nextSpots) {
       const existing = prev.get(spot.id);
@@ -239,23 +308,16 @@ const MapViewClient = forwardRef<
         if (ll.lat !== spot.lat || ll.lng !== spot.lng) {
           existing.setLatLng([spot.lat, spot.lng]);
         }
+        if (overlayChanged) setMarkerOverlayIcon(existing, pinOverlay);
         next.set(spot.id, existing);
         continue;
       }
       const marker = L.marker([spot.lat, spot.lng], { icon });
       (marker.options as Record<string, string>).spotId = spot.id;
       marker.on("click", () => {
-        // 戻ってきた時に「押したピン」が中心になるよう、現在ズームを保ったままピン座標を home:lastView に保存。
-        // GPS 自動センタリングが復路で発火しないよう、sessionStorage にスキップフラグを立てる。
         try {
-          if (typeof window !== "undefined") {
-            const z = mapRef.current?.getZoom() ?? INITIAL_ZOOM;
-            window.localStorage.setItem(
-              "home:lastView",
-              JSON.stringify({ lat: spot.lat, lng: spot.lng, zoom: z, t: Date.now() }),
-            );
-            window.sessionStorage.setItem("home:skipNextRelocate", "1");
-          }
+          const z = mapRef.current?.getZoom() ?? INITIAL_ZOOM;
+          persistView({ lat: spot.lat, lng: spot.lng, zoom: z });
         } catch {
           // ignore
         }
@@ -271,8 +333,9 @@ const MapViewClient = forwardRef<
 
     if (toRemove.length > 0) cluster.removeLayers(toRemove);
     if (toAdd.length > 0) cluster.addLayers(toAdd);
+    if (toRemove.length > 0 || toAdd.length > 0) cluster.refreshClusters();
     markerByIdRef.current = next;
-  }, [router]);
+  }, [pinOverlay, persistView, router]);
 
   useImperativeHandle(
     ref,
@@ -300,16 +363,17 @@ const MapViewClient = forwardRef<
 
   useEffect(() => {
     if (!mapReady) return;
-    if (!Number.isFinite(requestedZoom ?? NaN)) return;
-    mapRef.current?.setZoom(requestedZoom as number);
-  }, [mapReady, requestedZoom]);
-
-  useEffect(() => {
-    if (!mapReady) return;
     if (!recenterSignal) return;
     if (!initialCenter || !Number.isFinite(initialCenter.lat) || !Number.isFinite(initialCenter.lng)) return;
     const z = typeof initialZoom === "number" && Number.isFinite(initialZoom) ? initialZoom : INITIAL_ZOOM;
-    mapRef.current?.setView([initialCenter.lat, initialCenter.lng], z, { animate: false });
+    const next = { lat: initialCenter.lat, lng: initialCenter.lng, zoom: z };
+    mapRef.current?.setView([next.lat, next.lng], next.zoom, { animate: false });
+    if (isPersistableHomeMapView(next)) lastKnownViewRef.current = next;
+    viewSaveEnabledRef.current = false;
+    const t = window.setTimeout(() => {
+      viewSaveEnabledRef.current = true;
+    }, 400);
+    return () => window.clearTimeout(t);
   }, [mapReady, recenterSignal, initialCenter, initialZoom]);
 
   useEffect(() => {
@@ -341,15 +405,17 @@ const MapViewClient = forwardRef<
         const east = bounds.getEast();
 
         const applyFiltered = (snapshot: SpotMapItem[]) => {
-          const visible = filterSpotsInBounds(snapshot, south, west, north, east);
+          // クラスタ中に remove/add が走ると「集まった後に再び離れる」ちらつきが出るため、
+          // マーカーは全件スナップショットを保持し、表示範囲フィルタはクラスタ側に任せる。
           if (debug) {
-            console.log("[spots] viewport filter", {
+            const visible = filterSpotsInBounds(snapshot, south, west, north, east);
+            console.log("[spots] snapshot", {
               zoom,
               total: snapshot.length,
-              visible: visible.length,
+              inViewport: visible.length,
             });
           }
-          setSpots(visible);
+          setSpots(snapshot);
           if (!autoOpenAppliedRef.current && focus.spotId) {
             autoOpenAppliedRef.current = true;
           }
@@ -395,29 +461,13 @@ const MapViewClient = forwardRef<
       setMapReady(true);
       if (debug) console.log("[map] ready");
 
-      // Apply initial view before any fetch/paint drift.
+      // RestoreMapView が初回ビューを適用する。ここでは ref のみ同期。
       if (!focusAppliedRef.current) {
-        const fallbackLat = INITIAL_CENTER[0];
-        const fallbackLng = INITIAL_CENTER[1];
-        const lat =
-          typeof initialCenter?.lat === "number" && Number.isFinite(initialCenter.lat)
-            ? initialCenter.lat
-            : typeof persistedView?.lat === "number" && Number.isFinite(persistedView.lat)
-              ? persistedView.lat
-            : fallbackLat;
-        const lng =
-          typeof initialCenter?.lng === "number" && Number.isFinite(initialCenter.lng)
-            ? initialCenter.lng
-            : typeof persistedView?.lng === "number" && Number.isFinite(persistedView.lng)
-              ? persistedView.lng
-            : fallbackLng;
-        const z =
-          typeof initialZoom === "number" && Number.isFinite(initialZoom)
-            ? initialZoom
-            : typeof persistedView?.zoom === "number" && Number.isFinite(persistedView.zoom)
-              ? persistedView.zoom
-            : INITIAL_ZOOM;
-        map.setView([lat, lng], z, { animate: false });
+        if (focus.lat != null && focus.lng != null) {
+          map.setView([focus.lat, focus.lng], focus.zoom ?? 16, { animate: false });
+        } else if (isPersistableHomeMapView(restoreTargetView)) {
+          lastKnownViewRef.current = restoreTargetView;
+        }
         focusAppliedRef.current = true;
       }
 
@@ -469,14 +519,9 @@ const MapViewClient = forwardRef<
         // ギャラリーへ遷移する場合のみ、戻った時にクラスタ中心へ戻れるよう lastView を上書きする。
         const persistClusterCenter = () => {
           try {
-            if (typeof window === "undefined") return;
             const center = cluster.getLatLng();
             const z = mapRef.current?.getZoom() ?? INITIAL_ZOOM;
-            window.localStorage.setItem(
-              "home:lastView",
-              JSON.stringify({ lat: center.lat, lng: center.lng, zoom: z, t: Date.now() }),
-            );
-            window.sessionStorage.setItem("home:skipNextRelocate", "1");
+            persistView({ lat: center.lat, lng: center.lng, zoom: z });
           } catch {
             // ignore
           }
@@ -499,7 +544,7 @@ const MapViewClient = forwardRef<
       map.addLayer(markerClusterGroup);
       void applySpotsForViewport(map);
     },
-    [applySpotsForViewport, focus.lat, focus.lng, focus.zoom, debug, initialCenter, initialZoom, persistedView, router],
+    [applySpotsForViewport, focus.lat, focus.lng, focus.zoom, debug, persistView, restoreTargetView, router],
   );
 
   useEffect(() => {
@@ -534,6 +579,19 @@ const MapViewClient = forwardRef<
   // (bubble/canvas drawing removed)
 
   useEffect(() => {
+    const flush = () => {
+      const v = lastKnownViewRef.current;
+      if (v) writeHomeMapView(v);
+    };
+    window.addEventListener("pagehide", flush);
+    return () => {
+      viewSaveEnabledRef.current = false;
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, []);
+
+  useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
     if (focus.lat == null || focus.lng == null) return;
@@ -561,7 +619,13 @@ const MapViewClient = forwardRef<
     if (!map || !wrap || !mapReady) return;
     if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
+      viewSaveEnabledRef.current = false;
       map.invalidateSize({ pan: false });
+      const v = lastKnownViewRef.current;
+      if (v) map.setView([v.lat, v.lng], v.zoom, { animate: false });
+      window.setTimeout(() => {
+        viewSaveEnabledRef.current = true;
+      }, 400);
     });
     ro.observe(wrap);
     return () => ro.disconnect();
@@ -572,6 +636,7 @@ const MapViewClient = forwardRef<
       if (clusterRef.current && mapRef.current) {
         mapRef.current.removeLayer(clusterRef.current);
       }
+      clusterRef.current = null;
     };
   }, []);
 
@@ -619,7 +684,13 @@ const MapViewClient = forwardRef<
   }, [currentZoom]);
 
   return (
-    <section className="leaflet-viewport-below-header relative rounded-lg border">
+    <section
+      className={
+        showInternalControls
+          ? "leaflet-viewport-below-header relative rounded-lg border"
+          : "leaflet-viewport-below-header relative h-full w-full"
+      }
+    >
       {showInternalControls ? (
         <div className="absolute top-3 right-3 z-500 rounded-md bg-surface/95 px-3 py-1 text-xs text-on-surface shadow">
           表示モード: {modeLabel} {loading ? "(更新中)" : ""}
@@ -640,21 +711,10 @@ const MapViewClient = forwardRef<
         ref={mapWrapRef}
         className={mapWrapClassName ?? "relative h-[62vh] w-full sm:h-[70vh]"}
       >
+        {containerReady ? (
         <MapContainer
-          center={
-            initialCenter && Number.isFinite(initialCenter.lat) && Number.isFinite(initialCenter.lng)
-              ? [initialCenter.lat, initialCenter.lng]
-              : persistedView && Number.isFinite(persistedView.lat) && Number.isFinite(persistedView.lng)
-                ? [persistedView.lat, persistedView.lng]
-              : INITIAL_CENTER
-          }
-          zoom={
-            typeof initialZoom === "number" && Number.isFinite(initialZoom)
-              ? initialZoom
-              : typeof persistedView?.zoom === "number" && Number.isFinite(persistedView.zoom)
-                ? persistedView.zoom
-                : INITIAL_ZOOM
-          }
+          center={[restoreTargetView.lat, restoreTargetView.lng]}
+          zoom={restoreTargetView.zoom}
           minZoom={2}
           zoomControl={false}
           style={{ height: "100%", width: "100%" }}
@@ -676,10 +736,12 @@ const MapViewClient = forwardRef<
           {prefGeoJson && currentZoom >= 6 ? (
             <GeoJSON data={prefGeoJson as never} style={() => prefStyle} />
           ) : null}
+          <RestoreMapView view={restoreTargetView} viewSaveEnabledRef={viewSaveEnabledRef} />
           <MapInitializer onReady={onMapReady} />
           <ModeSync onZoom={onZoomChanged} />
-          <MapEventBridge onBoundsChange={applySpotsForViewport} onViewChange={onViewChange} />
+          <MapEventBridge onBoundsChange={applySpotsForViewport} onViewChange={handleViewChange} />
         </MapContainer>
+        ) : null}
       </div>
 
     </section>

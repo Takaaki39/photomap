@@ -2,17 +2,11 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { AddCircleNavIcon } from "@/components/Nav/AddCircleNavIcon";
 import { MapNavIcon } from "@/components/Nav/MapNavIcon";
 import { PersonNavIcon } from "@/components/Nav/PersonNavIcon";
 import { PhotoPrintsNavIcon } from "@/components/Nav/PhotoPrintsNavIcon";
 
 export type BottomNavActive = "map" | "gallery" | "upload" | "profile";
-
-const inactive =
-  "flex flex-col items-center justify-center gap-0.5 px-4 py-2 text-[#6b7280] transition-colors hover:text-[#111827]";
-const activePill =
-  "flex flex-col items-center justify-center gap-0.5 rounded-full bg-[#bbf7d0] px-5 py-2 text-[#111827]";
 
 type NavItemProps = {
   active: boolean;
@@ -25,22 +19,50 @@ function NavItem({ active, href, label, icon }: NavItemProps) {
   const content = (
     <>
       {icon}
-      <span className="text-[11px] font-medium leading-tight">{label}</span>
+      <span className="app-footer__label">{label}</span>
     </>
   );
 
   if (active) {
     return (
-      <span className={activePill} aria-current="page">
+      <span className="app-footer__item--active" aria-current="page">
         {content}
       </span>
     );
   }
 
   return (
-    <Link href={href} className={inactive}>
+    <Link href={href} className="app-footer__item">
       {content}
     </Link>
+  );
+}
+
+function UploadNavItem({ active, href, label }: Omit<NavItemProps, "icon">) {
+  const fab = (
+    <img
+      src="/icons/add_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+      alt=""
+      width={24}
+      height={24}
+      className="app-footer__upload-icon"
+      aria-hidden
+    />
+  );
+
+  return (
+    <div className={`app-footer__upload-slot${active ? " app-footer__upload-slot--active" : ""}`}>
+      {active ? (
+        <span className="app-footer__upload" aria-current="page" aria-label={label}>
+          {fab}
+        </span>
+      ) : (
+        <Link href={href} className="app-footer__upload" aria-label={label}>
+          {fab}
+        </Link>
+      )}
+      <span className="app-footer__upload-label">{label}</span>
+    </div>
   );
 }
 
@@ -53,7 +75,7 @@ export function BottomNav({
   galleryHref?: string;
 }) {
   return (
-    <nav className="fixed bottom-0 left-0 z-50 flex h-[72px] w-full items-center justify-around border-t border-[#e5e7eb] bg-white pb-safe">
+    <nav className="app-footer">
       <NavItem active={active === "map"} href="/" label="マップ" icon={<MapNavIcon />} />
       <NavItem
         active={active === "gallery"}
@@ -61,7 +83,7 @@ export function BottomNav({
         label="ギャラリー"
         icon={<PhotoPrintsNavIcon />}
       />
-      <NavItem active={active === "upload"} href="/upload" label="アップロード" icon={<AddCircleNavIcon />} />
+      <UploadNavItem active={active === "upload"} href="/upload" label="アップロード" />
       <NavItem active={active === "profile"} href="/profile" label="プロフィール" icon={<PersonNavIcon />} />
     </nav>
   );

@@ -1,0 +1,10 @@
+/** プロフィールページ ヒーローカバー */
+
+.profile-cover {
+  background: linear-gradient(
+    180deg,
+    rgba(191, 219, 254, 0.55) 0%,
+    rgba(247, 249, 255, 0.95) 55%,
+    #f7f9ff 100%
+  );
+}

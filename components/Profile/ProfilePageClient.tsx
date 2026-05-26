@@ -253,7 +253,7 @@ export function ProfilePageClient() {
             </div>
           </div>
 
-          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="mt-8 grid grid-cols-3 gap-2 sm:gap-4">
             {[
               { value: totalPhotos, label: "写真数" },
               { value: placesVisited, label: "訪れた場所" },
@@ -261,10 +261,10 @@ export function ProfilePageClient() {
             ].map((stat) => (
               <div
                 key={stat.label}
-                className="flex flex-col items-center justify-center rounded-xl border border-[#e5e7eb]/60 bg-white px-6 py-6 text-center shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
+                className="flex flex-col items-center justify-center rounded-xl border border-[#e5e7eb]/60 bg-white px-2 py-3 text-center shadow-[0_1px_3px_rgba(0,0,0,0.06)] sm:px-6 sm:py-6"
               >
-                <span className="text-[32px] font-bold leading-none text-[#2563eb]">{stat.value}</span>
-                <span className="mt-2 text-xs font-medium text-[#9ca3af]">
+                <span className="text-[22px] font-bold leading-none text-[#2563eb] sm:text-[32px]">{stat.value}</span>
+                <span className="mt-1 text-[10px] font-medium text-[#9ca3af] sm:mt-2 sm:text-xs">
                   {stat.label}
                 </span>
               </div>

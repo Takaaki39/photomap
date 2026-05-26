@@ -251,20 +251,31 @@ export default function UploadPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f3f4f6] text-[#111827] scheme-light">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#eef4ff_0%,#f6f8fc_40%,#f8fafc_100%)] text-[#111827] scheme-light">
       <TopNav />
 
       <main
-        className={`mx-auto w-full max-w-7xl px-margin-mobile md:px-margin-desktop ${APP_MAIN_TOP_CLASS} ${APP_MAIN_BOTTOM_CLASS}`}
+        className={`mx-auto w-full max-w-7xl px-margin-mobile md:px-margin-desktop ${APP_MAIN_TOP_CLASS} ${APP_MAIN_BOTTOM_CLASS} pb-32 pt-4 md:pt-6`}
       >
+        <header className="mb-6 rounded-2xl border border-white/70 bg-white/80 px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.08)] backdrop-blur-sm md:px-6 md:py-5">
+          <p className="text-label-sm font-label-sm uppercase tracking-wider text-primary/80">Upload</p>
+          <h1 className="mt-1 text-2xl font-semibold text-[#0f172a] md:text-3xl">写真をアップロード</h1>
+          <p className="mt-1 text-sm text-[#475569] md:text-base">
+            位置情報付きの写真を選ぶだけで、スポットに自動で整理して追加できます。
+          </p>
+        </header>
+
         {error ? (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {error}
+          <div className="mb-5 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50/95 px-4 py-3 text-sm text-red-700 shadow-sm">
+            <span aria-hidden className="mt-0.5 text-red-500">
+              ⚠
+            </span>
+            <span>{error}</span>
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
-          <section className="lg:col-span-7 xl:col-span-8">
+        <div className="grid grid-cols-1 gap-7 lg:grid-cols-12 lg:items-start">
+          <section className="rounded-2xl border border-white/70 bg-white/85 p-3 shadow-[0_16px_40px_rgba(15,23,42,0.08)] backdrop-blur-sm sm:p-4 lg:col-span-7 xl:col-span-8">
             <input
               ref={inputRef}
               type="file"
@@ -297,7 +308,7 @@ export default function UploadPage() {
             )}
           </section>
 
-          <aside className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24">
+          <aside className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-29">
             <div className="flex flex-col gap-4">
               <UploadLocationCard gps={activeGps} />
 
@@ -333,7 +344,7 @@ export default function UploadPage() {
                 </div>
               ) : null}
 
-              <div className="rounded-2xl border border-outline-variant/80 bg-surface-container-lowest p-3 shadow-[0_4px_24px_rgba(0,0,0,0.06)]">
+              <div className="rounded-2xl border border-primary/20 bg-linear-to-b from-white to-[#f5f8ff] p-3 shadow-[0_10px_30px_rgba(37,99,235,0.12)]">
                 <p className="mb-2 px-1 text-label-sm font-label-sm font-semibold uppercase tracking-wide text-on-surface-variant">
                   投稿する
                 </p>
@@ -342,7 +353,7 @@ export default function UploadPage() {
                   aria-busy={stage === "uploading" || undefined}
                   disabled={stage === "select" || files.length === 0 || !canProceed}
                   onClick={onSubmit}
-                  className="group relative flex w-full items-center gap-4 overflow-hidden rounded-xl px-4 py-4 text-left transition-all focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/35 focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-busy:pointer-events-none aria-busy:cursor-wait disabled:cursor-not-allowed disabled:border-2 disabled:border-dashed disabled:border-outline-variant disabled:bg-surface-container-high disabled:text-on-surface-variant disabled:shadow-none enabled:cursor-pointer enabled:border-2 enabled:border-white/30 enabled:bg-primary enabled:text-on-primary enabled:shadow-[0_12px_40px_-8px_rgba(0,88,189,0.45)] enabled:hover:-translate-y-0.5 enabled:hover:border-white/50 enabled:hover:bg-primary-container enabled:hover:shadow-[0_16px_48px_-6px_rgba(0,88,189,0.5)] enabled:active:translate-y-0 enabled:active:shadow-[0_8px_28px_-6px_rgba(0,88,189,0.4)] dark:enabled:shadow-[0_12px_40px_-8px_rgba(173,198,255,0.25)] dark:enabled:hover:shadow-[0_16px_48px_-6px_rgba(173,198,255,0.32)]"
+                  className="group relative flex w-full items-center gap-4 overflow-hidden rounded-xl px-4 py-4 text-left transition-all focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/35 focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-busy:pointer-events-none aria-busy:cursor-wait disabled:cursor-not-allowed disabled:border-2 disabled:border-dashed disabled:border-outline-variant disabled:bg-surface-container-high disabled:text-on-surface-variant disabled:shadow-none enabled:cursor-pointer enabled:border-2 enabled:border-white/40 enabled:bg-primary enabled:text-on-primary enabled:shadow-[0_14px_38px_-8px_rgba(0,88,189,0.48)] enabled:hover:-translate-y-0.5 enabled:hover:border-white/60 enabled:hover:bg-primary-container enabled:hover:shadow-[0_18px_52px_-6px_rgba(0,88,189,0.52)] enabled:active:translate-y-0 enabled:active:shadow-[0_8px_28px_-6px_rgba(0,88,189,0.4)] dark:enabled:shadow-[0_12px_40px_-8px_rgba(173,198,255,0.25)] dark:enabled:hover:shadow-[0_16px_48px_-6px_rgba(173,198,255,0.32)]"
                 >
                   <span
                     aria-hidden
@@ -383,7 +394,7 @@ export default function UploadPage() {
                 </button>
               </div>
 
-              <p className="px-4 text-center text-label-sm font-label-sm text-outline">
+              <p className="rounded-xl border border-white/70 bg-white/70 px-4 py-3 text-center text-label-sm font-label-sm text-[#64748b]">
                 投稿すると、位置情報を含むデータの取り扱いに同意したものとみなされます。
               </p>
             </div>

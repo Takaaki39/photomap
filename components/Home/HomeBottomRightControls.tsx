@@ -2,40 +2,27 @@
 
 export function HomeBottomRightControls({
   onLocate,
-  onUpload,
 }: {
   onLocate: () => void;
-  onUpload: () => void;
 }) {
   return (
-    <div className="absolute bottom-32 right-4 md:right-8 z-20 flex flex-col gap-4 items-end">
+    <div className="absolute bottom-32 right-4 z-20 md:right-8">
       <button
         type="button"
-        aria-label="Current location"
+        aria-label="現在地へ移動"
         onClick={onLocate}
-        className="w-16 h-16 bg-surface-container-lowest/95 dark:bg-surface-container/99 backdrop-blur-md shadow-lg rounded-full flex items-center justify-center active:scale-90 transition-transform border border-outline-variant/60 dark:border-outline/40"
+        className="group relative flex h-14 w-14 items-center justify-center rounded-full border border-sky-200/60 bg-[#0b1220]/82 text-white shadow-[0_10px_30px_rgba(2,132,199,0.45)] backdrop-blur-md transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_36px_rgba(14,165,233,0.55)] active:scale-95"
       >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-br from-sky-300/20 via-transparent to-cyan-300/25"
+        />
         <img
           src="/icons/my_location_48dp_E3E3E3_FILL0_wght400_GRAD0_opsz48.svg"
           alt=""
-          width={48}
-          height={48}
-          className="block pointer-events-none"
-          aria-hidden
-        />
-      </button>
-      <button
-        type="button"
-        aria-label="Upload"
-        onClick={onUpload}
-        className="w-16 h-16 bg-surface-container-lowest/95 dark:bg-surface-container/99 backdrop-blur-md shadow-lg rounded-full flex items-center justify-center active:scale-90 transition-transform border border-outline-variant/60 dark:border-outline/40"
-      >
-        <img
-          src="/icons/add_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
-          alt=""
-          width={48}
-          height={48}
-          className="block pointer-events-none"
+          width={30}
+          height={30}
+          className="pointer-events-none block brightness-[1.25] contrast-125"
           aria-hidden
         />
       </button>

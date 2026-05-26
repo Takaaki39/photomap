@@ -1,0 +1,187 @@
+/**
+ * 地図・ピン・クラスタのスタイル
+ * ベース: public/icons/mappin-base.svg
+ * オーバーレイ: lib/mapPinIcon.ts の MAP_PIN_OVERLAYS
+ */
+
+:root {
+  --map-top-offset: calc(var(--nav-header-top) + var(--nav-header-height) + 0.5rem);
+
+  /* クラスタ（小・中・大）— 編集しやすいよう変数化 */
+  --map-cluster-sm-outer: rgba(74, 222, 128, 0.35);
+  --map-cluster-sm-inner: rgba(34, 197, 94, 0.55);
+  --map-cluster-md-outer: rgba(250, 204, 21, 0.35);
+  --map-cluster-md-inner: rgba(234, 179, 8, 0.55);
+  --map-cluster-lg-outer: rgba(251, 146, 60, 0.35);
+  --map-cluster-lg-inner: rgba(249, 115, 22, 0.55);
+}
+
+/* ホーム地図レイアウト（ヘッダーの下に余白を作らず、地図を背面いっぱいに表示） */
+.home-map-viewport {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.home-map-wrap {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+
+/* スポット詳細サイドパネル */
+.map-spot-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 600;
+  width: min(360px, 100%);
+  height: 100%;
+  background: color-mix(in oklab, var(--background) 82%, white);
+  border-left: 1px solid var(--border);
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  box-shadow: -2px 0 12px rgba(15, 23, 42, 0.12);
+}
+
+.map-spot-panel.open {
+  transform: translateX(0);
+}
+
+/* Leaflet 左上コントロールをヘッダー下へ */
+.leaflet-viewport-below-header {
+  --map-header-offset: var(--map-top-offset);
+}
+
+.leaflet-viewport-below-header .leaflet-top.leaflet-left {
+  top: var(--map-header-offset);
+}
+
+/* --- Map pin（base + overlay） --- */
+
+.leaflet-div-icon.map-pin-marker-wrap {
+  background: transparent;
+  border: none;
+}
+
+.map-pin-marker {
+  position: relative;
+  width: var(--map-pin-width, 33px);
+  height: var(--map-pin-height, 40px);
+}
+
+.map-pin-marker__base {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.map-pin-marker__slot {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  width: 58%;
+  aspect-ratio: 1 / 1;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.map-pin-marker__overlay {
+  width: 80%;
+  height: 80%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+/* --- Marker cluster（leaflet.markercluster） --- */
+
+.leaflet-cluster-anim .leaflet-marker-icon,
+.leaflet-cluster-anim .leaflet-marker-shadow {
+  transition:
+    transform 0.3s ease-out,
+    opacity 0.3s ease-in;
+}
+
+.leaflet-cluster-spider-leg {
+  transition:
+    stroke-dashoffset 0.3s ease-out,
+    stroke-opacity 0.3s ease-in;
+}
+
+.marker-cluster {
+  background-clip: padding-box;
+  border-radius: 20px;
+}
+
+.marker-cluster div {
+  width: 30px;
+  height: 30px;
+  margin-left: 5px;
+  margin-top: 5px;
+  text-align: center;
+  border-radius: 15px;
+  font:
+    600 12px var(--font-inter),
+    "Helvetica Neue",
+    Arial,
+    Helvetica,
+    sans-serif;
+  color: #ffffff;
+}
+
+.marker-cluster span {
+  line-height: 30px;
+}
+
+.marker-cluster-small {
+  background-color: var(--map-cluster-sm-outer);
+}
+
+.marker-cluster-small div {
+  background-color: var(--map-cluster-sm-inner);
+}
+
+.marker-cluster-medium {
+  background-color: var(--map-cluster-md-outer);
+}
+
+.marker-cluster-medium div {
+  background-color: var(--map-cluster-md-inner);
+}
+
+.marker-cluster-large {
+  background-color: var(--map-cluster-lg-outer);
+}
+
+.marker-cluster-large div {
+  background-color: var(--map-cluster-lg-inner);
+}
+
+.leaflet-oldie .marker-cluster-small {
+  background-color: rgb(74, 222, 128);
+}
+
+.leaflet-oldie .marker-cluster-small div {
+  background-color: rgb(34, 197, 94);
+}
+
+.leaflet-oldie .marker-cluster-medium {
+  background-color: rgb(250, 204, 21);
+}
+
+.leaflet-oldie .marker-cluster-medium div {
+  background-color: rgb(234, 179, 8);
+}
+
+.leaflet-oldie .marker-cluster-large {
+  background-color: rgb(251, 146, 60);
+}
+
+.leaflet-oldie .marker-cluster-large div {
+  background-color: rgb(249, 115, 22);
+}
