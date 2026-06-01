@@ -8,8 +8,9 @@ import { GallerySelectionBar } from "./GallerySelectionBar";
 import { BottomNav } from "@/components/Nav/BottomNav";
 import { APP_MAIN_BOTTOM_CLASS, APP_MAIN_TOP_CLASS, TopNav } from "@/components/Nav/TopNav";
 import type { GalleryPhoto, GallerySpot } from "./types";
-import { refreshAllSpotsSnapshot } from "@/lib/spotsBoundsCache";
 import { MergedSpotsGalleryClient } from "@/components/Gallery/MergedSpotsGalleryClient";
+import { fetchSpotGallery } from "@/features/gallery/api/galleryApi";
+import { useDeleteGalleryPhoto } from "@/features/gallery/hooks/useDeleteGalleryPhoto";
 import { isMergedSpotsClusterGalleryId, normalizeGalleryRouteId } from "@/lib/galleryRouteId";
 
 export function GalleryClient({ spotId }: { spotId: string }) {
@@ -23,6 +24,8 @@ export function GalleryClient({ spotId }: { spotId: string }) {
   const [photosLoading, setPhotosLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [selectMode, setSelectMode] = useState(false);
+
+  const deleteGalleryPhoto = useDeleteGalleryPhoto({ onError: setError });
 
   const isUuid = useMemo(() => {
     if (isMergedGallery) return false;
@@ -45,26 +48,15 @@ export function GalleryClient({ spotId }: { spotId: string }) {
     setPhotos([]);
     void (async () => {
       try {
-        const [spotRes, photosRes] = await Promise.all([
-          fetch(`/api/spots/${id}`, { cache: "no-store" }),
-          fetch(`/api/spots/${id}/photos?limit=100`, { cache: "no-store" }),
-        ]);
-
+        const result = await fetchSpotGallery(id);
         if (cancelled) return;
-
-        if (spotRes.ok) {
-          const d = (await spotRes.json()) as { spot?: GallerySpot };
-          setSpot(d.spot ?? null);
-        }
-
-        if (!photosRes.ok) {
-          const text = await photosRes.text();
-          setError(text || "写真の取得に失敗しました。");
+        if ("error" in result) {
+          setError(result.error);
           return;
         }
-        const d = (await photosRes.json()) as { photos?: GalleryPhoto[]; total?: number | null };
-        setPhotos(d.photos ?? []);
-        setTotal(typeof d.total === "number" ? d.total : null);
+        setSpot(result.spot);
+        setPhotos(result.photos);
+        setTotal(result.total);
         setError(null);
       } finally {
         if (!cancelled) setPhotosLoading(false);
@@ -91,20 +83,14 @@ export function GalleryClient({ spotId }: { spotId: string }) {
   };
 
   const deletePhoto = async (photoId: string) => {
-    if (!confirm("この写真を削除しますか？（クラウド上の画像も削除されます）")) return;
-    const res = await fetch(`/api/photos/${photoId}`, { method: "DELETE" });
-    if (!res.ok) {
-      const text = await res.text();
-      setError(text || "削除に失敗しました。");
-      return;
-    }
+    const ok = await deleteGalleryPhoto(photoId);
+    if (!ok) return;
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
     setSelected((prev) => {
       const next = new Set(prev);
       next.delete(photoId);
       return next;
     });
-    void refreshAllSpotsSnapshot();
   };
 
   return (
@@ -151,8 +137,7 @@ export function GalleryClient({ spotId }: { spotId: string }) {
         />
       ) : null}
 
-      <BottomNav active="gallery" galleryHref={`/gallery/${encodeURIComponent(id)}`} />
+      <BottomNav active="none" />
     </div>
   );
 }
-

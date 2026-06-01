@@ -1,10 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { extractGpsFromExif } from "@/lib/exif";
-import { refreshAllSpotsSnapshot } from "@/lib/spotsBoundsCache";
-import { uploadPhotoViaStorage } from "@/lib/uploadPhotoClient";
 import { UploadResultModal } from "@/components/Upload/UploadResultModal";
 import { UploadFileDrop } from "@/components/Upload/UploadFileDrop";
 import { UploadLocationCard } from "@/components/Upload/UploadLocationCard";
@@ -12,262 +8,73 @@ import { UploadPreview } from "@/components/Upload/UploadPreview";
 import { UploadTagPicker } from "@/components/Upload/UploadTagPicker";
 import { BottomNav } from "@/components/Nav/BottomNav";
 import { APP_MAIN_BOTTOM_CLASS, APP_MAIN_TOP_CLASS, TopNav } from "@/components/Nav/TopNav";
-
-const MAX_BYTES = 20 * 1024 * 1024;
-const ALLOWED_MIME = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/heic",
-  "image/heif",
-  "image/webp",
-]);
-
-type Stage = "select" | "review" | "uploading" | "done";
-
-function formatBytes(bytes: number) {
-  const mb = bytes / (1024 * 1024);
-  return `${mb.toFixed(1)}MB`;
-}
-
-function formatLocalDateTime(file: File | null) {
-  if (!file) return "";
-  try {
-    return new Date(file.lastModified).toLocaleString("ja-JP");
-  } catch {
-    return "";
-  }
-}
+import { useUploadFlow } from "@/features/upload/hooks/useUploadFlow";
 
 export default function UploadPage() {
   const router = useRouter();
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const {
+    stage,
+    step,
+    files,
+    activeIndex,
+    setActiveIndex,
+    previewUrl,
+    activeFile,
+    activeGps,
+    tag,
+    setTag,
+    error,
+    result,
+    uploadingIndex,
+    uploadedCount,
+    canProceed,
+    onPickFiles,
+    onSubmit,
+    formatBytes,
+  } = useUploadFlow();
 
-  const [stage, setStage] = useState<Stage>("select");
-  const [files, setFiles] = useState<File[]>([]);
-  // files と長さ・順序が一致する各写真の EXIF GPS。GPS 無しのファイルは選択時に除外している
-  const [gpsList, setGpsList] = useState<Array<{ lat: number; lng: number }>>([]);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [isPublic] = useState(true);
-  const [placeName, setPlaceName] = useState("");
-  const [tag, setTag] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ spot_id: string; photo_id: string; lat?: number; lng?: number } | null>(null);
-  const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
-  const [uploadedCount, setUploadedCount] = useState(0);
-
-  const canProceed = useMemo(() => {
-    return files.length > 0 && gpsList.length === files.length;
-  }, [files.length, gpsList.length]);
-
-  const activeFile = useMemo(() => files[activeIndex] ?? null, [files, activeIndex]);
-  const activeGps = useMemo(() => gpsList[activeIndex] ?? null, [gpsList, activeIndex]);
-
-  const previewUrl = useMemo(() => {
-    if (!activeFile) return null;
-    return URL.createObjectURL(activeFile);
-  }, [activeFile]);
-
-  useEffect(() => {
-    if (!previewUrl) return;
-    return () => URL.revokeObjectURL(previewUrl);
-  }, [previewUrl]);
-
-  const validateFile = (f: File) => {
-    if (!ALLOWED_MIME.has(f.type)) {
-      return "対応形式は JPEG / PNG / HEIC / WebP です。";
-    }
-    if (f.size > MAX_BYTES) {
-      return `ファイルサイズが大きすぎます（最大20MB）。現在: ${formatBytes(f.size)}`;
-    }
-    return null;
-  };
-
-  const resetAll = () => {
-    setFiles([]);
-    setGpsList([]);
-    setActiveIndex(0);
-    setStage("select");
-    setResult(null);
-    setUploadingIndex(null);
-    setUploadedCount(0);
-    setTag(null);
-  };
-
-  const onPickFiles = async (picked: File[]) => {
-    setError(null);
-    if (picked.length === 0) return;
-    const keepOnPickFailure = stage === "review" && files.length > 0;
-
-    for (const f of picked) {
-      const v = validateFile(f);
-      if (v) {
-        if (keepOnPickFailure) setError(v);
-        else {
-          resetAll();
-          setError(v);
-        }
-        return;
-      }
-    }
-
-    // EXIF(GPS)が無い写真はアップロード対象から除外する。GPS は写真ごとに保持する
-    const accepted: Array<{ file: File; gps: { lat: number; lng: number } }> = [];
-    const withoutExif: string[] = [];
-    for (const f of picked) {
-      try {
-        const g = await extractGpsFromExif(f);
-        if (g) accepted.push({ file: f, gps: g });
-        else withoutExif.push(f.name);
-      } catch {
-        withoutExif.push(f.name);
-      }
-    }
-
-    if (accepted.length === 0) {
-      const msg =
-        "位置情報（EXIF）がある写真が見つかりませんでした。位置情報付きの写真を選択してください。";
-      if (keepOnPickFailure) setError(msg);
-      else {
-        resetAll();
-        setError(msg);
-      }
-      return;
-    }
-
-    setFiles(accepted.map((a) => a.file));
-    setGpsList(accepted.map((a) => a.gps));
-    setActiveIndex(0);
-    setStage("review");
-    // ローカル日時の整形は副作用無し（プレビューラベル用途で残存）
-    void formatLocalDateTime(accepted[0]?.file ?? null);
-
-    if (withoutExif.length > 0) {
-      setError(`位置情報（EXIF）が無いので除外しました: ${withoutExif.slice(0, 5).join("、")}${withoutExif.length > 5 ? ` ほか${withoutExif.length - 5}件` : ""}`);
-    }
-  };
-
-  const lastAutoFillKeyRef = useRef<string>("");
-  useEffect(() => {
-    const chosen = activeGps;
-    if (!chosen) return;
-
-    const key = `${chosen.lat.toFixed(6)},${chosen.lng.toFixed(6)}`;
-    if (key === lastAutoFillKeyRef.current) return;
-
-    // Don't overwrite user-entered text (only fill when empty, or when last value was auto-filled).
-    const canOverwrite = placeName.trim().length === 0 || placeName === lastAutoFillKeyRef.current;
-    if (!canOverwrite) {
-      lastAutoFillKeyRef.current = key;
-      return;
-    }
-
-    lastAutoFillKeyRef.current = key;
-    void (async () => {
-      try {
-        const res = await fetch(`/api/geocode/reverse?lat=${encodeURIComponent(String(chosen.lat))}&lng=${encodeURIComponent(String(chosen.lng))}`, {
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const d = (await res.json()) as { result?: { name?: string } | null };
-        const name = typeof d.result?.name === "string" ? d.result.name.trim() : "";
-        if (!name) return;
-        setPlaceName((prev) => (prev.trim().length === 0 ? name : prev));
-      } catch {
-        // ignore
-      }
-    })();
-  }, [activeGps, placeName]);
-
-  const onDrop: React.DragEventHandler<HTMLDivElement> = async (e) => {
-    e.preventDefault();
-    const list = Array.from(e.dataTransfer.files ?? []);
-    if (list.length > 0) await onPickFiles(list);
-  };
-
-  const onSubmit = async () => {
-    if (stage === "uploading") return;
-    if (files.length === 0) return;
-    if (!canProceed) {
-      setError("位置情報が不足しています。位置情報（EXIF）付きの写真を選んでください。");
-      return;
-    }
-
-    setStage("uploading");
-    setError(null);
-    setUploadedCount(0);
-
-    const isBatch = files.length > 1;
-    // Nominatim 利用規約: 1 req/sec。サーバ側 reverse-geocode は写真ごとに走るため、
-    // バッチ時はクライアントで 1 枚ごとの開始間隔を 1.1 秒以上空けてレートを守る。
-    const REVERSE_GEOCODE_MIN_INTERVAL_MS = 1100;
-    let lastStartedAt = 0;
-
-    for (let i = 0; i < files.length; i += 1) {
-      const file = files[i];
-      const photoGps = gpsList[i];
-      if (!file || !photoGps) continue;
-
-      if (i > 0) {
-        const since = Date.now() - lastStartedAt;
-        if (since < REVERSE_GEOCODE_MIN_INTERVAL_MS) {
-          await new Promise((r) => setTimeout(r, REVERSE_GEOCODE_MIN_INTERVAL_MS - since));
-        }
-      }
-      lastStartedAt = Date.now();
-      setUploadingIndex(i);
-
-      try {
-        const payload = await uploadPhotoViaStorage({
-          file,
-          // 各写真の EXIF GPS をそのまま使う（まとめてアップロードでも 1 枚目の位置に寄せない）
-          lat: photoGps.lat,
-          lng: photoGps.lng,
-          // バッチ時は手入力 placeName を全写真に流用するとスポット名がズレるため、空文字でサーバ側 reverse-geocode に任せる
-          placeName: isBatch ? "" : placeName,
-          isPublic,
-          tag,
-        });
-
-        setUploadedCount((c) => c + 1);
-        setResult({
-          spot_id: payload.spot_id,
-          photo_id: payload.photo_id,
-          lat: payload.lat,
-          lng: payload.lng,
-        });
-      } catch (e) {
-        setStage("review");
-        setUploadingIndex(null);
-        const msg = e instanceof Error ? e.message : "アップロードに失敗しました。";
-        setError(`${i + 1}枚目で失敗: ${msg}`);
-        return;
-      }
-    }
-
-    await refreshAllSpotsSnapshot();
-
-    setUploadingIndex(null);
-    setStage("done");
-  };
+  const stepItems = [
+    { id: 1, label: "選択" },
+    { id: 2, label: "確認" },
+    { id: 3, label: "投稿" },
+  ] as const;
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#eef4ff_0%,#f6f8fc_40%,#f8fafc_100%)] text-[#111827] scheme-light">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#f8fbff_0%,#eef4ff_42%,#e9edf6_100%)] text-[#0f172a] scheme-light">
       <TopNav />
 
       <main
-        className={`mx-auto w-full max-w-7xl px-margin-mobile md:px-margin-desktop ${APP_MAIN_TOP_CLASS} ${APP_MAIN_BOTTOM_CLASS} pb-32 pt-4 md:pt-6`}
+        className={`mx-auto w-full max-w-7xl px-4 md:px-margin-desktop ${APP_MAIN_TOP_CLASS} ${APP_MAIN_BOTTOM_CLASS} pb-32 pt-4 md:pt-6`}
       >
-        <header className="mb-6 rounded-2xl border border-white/70 bg-white/80 px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.08)] backdrop-blur-sm md:px-6 md:py-5">
-          <p className="text-label-sm font-label-sm uppercase tracking-wider text-primary/80">Upload</p>
+        <header className="mb-6 rounded-3xl border border-slate-200/75 bg-white/82 px-5 py-4 shadow-[0_14px_36px_rgba(15,23,42,0.1)] backdrop-blur-sm md:px-6 md:py-5">
+          <p className="text-label-sm font-label-sm uppercase tracking-wider text-sky-700">Upload</p>
           <h1 className="mt-1 text-2xl font-semibold text-[#0f172a] md:text-3xl">写真をアップロード</h1>
           <p className="mt-1 text-sm text-[#475569] md:text-base">
             位置情報付きの写真を選ぶだけで、スポットに自動で整理して追加できます。
           </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {stepItems.map((item) => {
+              const active = step >= item.id;
+              return (
+                <span
+                  key={item.id}
+                  className={
+                    "inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold tracking-wide " +
+                    (active
+                      ? "border-sky-500/35 bg-sky-500/12 text-sky-700"
+                      : "border-slate-200 bg-white text-slate-500")
+                  }
+                >
+                  {item.id}. {item.label}
+                </span>
+              );
+            })}
+          </div>
         </header>
 
         {error ? (
-          <div className="mb-5 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50/95 px-4 py-3 text-sm text-red-700 shadow-sm">
-            <span aria-hidden className="mt-0.5 text-red-500">
+          <div className="mb-5 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
+            <span aria-hidden className="mt-0.5 text-rose-500">
               ⚠
             </span>
             <span>{error}</span>
@@ -275,9 +82,9 @@ export default function UploadPage() {
         ) : null}
 
         <div className="grid grid-cols-1 gap-7 lg:grid-cols-12 lg:items-start">
-          <section className="rounded-2xl border border-white/70 bg-white/85 p-3 shadow-[0_16px_40px_rgba(15,23,42,0.08)] backdrop-blur-sm sm:p-4 lg:col-span-7 xl:col-span-8">
+          <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-3 shadow-[0_18px_40px_rgba(15,23,42,0.12)] backdrop-blur-sm sm:p-4 lg:col-span-7 xl:col-span-8">
             <input
-              ref={inputRef}
+              id="upload-file-input"
               type="file"
               multiple
               accept="image/jpeg,image/png,image/heic,image/heif,image/webp"
@@ -290,13 +97,20 @@ export default function UploadPage() {
             />
             {stage === "select" ? (
               <div className="space-y-4">
-                <UploadFileDrop onDrop={onDrop} onPickClick={() => inputRef.current?.click()} />
+                <UploadFileDrop
+                  onDrop={async (e) => {
+                    e.preventDefault();
+                    const list = Array.from(e.dataTransfer.files ?? []);
+                    if (list.length > 0) await onPickFiles(list);
+                  }}
+                  onPickClick={() => document.getElementById("upload-file-input")?.click()}
+                />
               </div>
             ) : (
               <UploadPreview
                 previewUrl={previewUrl}
                 pickable={stage === "review"}
-                onRequestPick={() => inputRef.current?.click()}
+                onRequestPick={() => document.getElementById("upload-file-input")?.click()}
                 fileLabel={
                   activeFile
                     ? `${activeFile.name} ・ ${formatBytes(activeFile.size)}（${activeIndex + 1}/${files.length}）`
@@ -317,15 +131,15 @@ export default function UploadPage() {
               ) : null}
 
               {stage === "review" && files.length > 1 ? (
-                <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-3 text-body-md font-body-md">
+                <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-3 text-body-md font-body-md shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-on-surface-variant">
+                    <div className="text-[#475569]">
                       選択中: {activeIndex + 1}/{files.length}
                     </div>
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        className="rounded-lg border border-outline-variant bg-surface-container-low px-4 py-2 text-label-lg font-label-lg text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-[0.98] disabled:opacity-60"
+                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-label-lg font-label-lg text-slate-700 transition-colors hover:bg-slate-50 active:scale-[0.98] disabled:opacity-60"
                         onClick={() => setActiveIndex((v) => Math.max(0, v - 1))}
                         disabled={activeIndex === 0}
                       >
@@ -333,7 +147,7 @@ export default function UploadPage() {
                       </button>
                       <button
                         type="button"
-                        className="rounded-lg border border-outline-variant bg-surface-container-low px-4 py-2 text-label-lg font-label-lg text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-[0.98] disabled:opacity-60"
+                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-label-lg font-label-lg text-slate-700 transition-colors hover:bg-slate-50 active:scale-[0.98] disabled:opacity-60"
                         onClick={() => setActiveIndex((v) => Math.min(files.length - 1, v + 1))}
                         disabled={activeIndex >= files.length - 1}
                       >
@@ -344,20 +158,20 @@ export default function UploadPage() {
                 </div>
               ) : null}
 
-              <div className="rounded-2xl border border-primary/20 bg-linear-to-b from-white to-[#f5f8ff] p-3 shadow-[0_10px_30px_rgba(37,99,235,0.12)]">
-                <p className="mb-2 px-1 text-label-sm font-label-sm font-semibold uppercase tracking-wide text-on-surface-variant">
+              <div className="rounded-2xl border border-sky-200/70 bg-linear-to-br from-sky-50 to-indigo-50 p-3 shadow-[0_12px_28px_rgba(14,116,144,0.12)]">
+                <p className="mb-2 px-1 text-label-sm font-label-sm font-semibold uppercase tracking-wide text-sky-700">
                   投稿する
                 </p>
                 <button
                   type="button"
                   aria-busy={stage === "uploading" || undefined}
                   disabled={stage === "select" || files.length === 0 || !canProceed}
-                  onClick={onSubmit}
-                  className="group relative flex w-full items-center gap-4 overflow-hidden rounded-xl px-4 py-4 text-left transition-all focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/35 focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-busy:pointer-events-none aria-busy:cursor-wait disabled:cursor-not-allowed disabled:border-2 disabled:border-dashed disabled:border-outline-variant disabled:bg-surface-container-high disabled:text-on-surface-variant disabled:shadow-none enabled:cursor-pointer enabled:border-2 enabled:border-white/40 enabled:bg-primary enabled:text-on-primary enabled:shadow-[0_14px_38px_-8px_rgba(0,88,189,0.48)] enabled:hover:-translate-y-0.5 enabled:hover:border-white/60 enabled:hover:bg-primary-container enabled:hover:shadow-[0_18px_52px_-6px_rgba(0,88,189,0.52)] enabled:active:translate-y-0 enabled:active:shadow-[0_8px_28px_-6px_rgba(0,88,189,0.4)] dark:enabled:shadow-[0_12px_40px_-8px_rgba(173,198,255,0.25)] dark:enabled:hover:shadow-[0_16px_48px_-6px_rgba(173,198,255,0.32)]"
+                  onClick={() => void onSubmit()}
+                  className="group relative flex w-full items-center gap-4 overflow-hidden rounded-xl px-4 py-4 text-left transition-all focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sky-300/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white aria-busy:pointer-events-none aria-busy:cursor-wait disabled:cursor-not-allowed disabled:border-2 disabled:border-dashed disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500 disabled:shadow-none enabled:cursor-pointer enabled:border-2 enabled:border-sky-200/45 enabled:bg-linear-to-r enabled:from-sky-500 enabled:to-blue-600 enabled:text-white enabled:shadow-[0_16px_40px_-10px_rgba(14,165,233,0.55)] enabled:hover:-translate-y-0.5 enabled:hover:border-sky-200/65 enabled:hover:from-sky-400 enabled:hover:to-blue-500 enabled:hover:shadow-[0_20px_56px_-10px_rgba(14,165,233,0.6)] enabled:active:translate-y-0 enabled:active:shadow-[0_10px_30px_-10px_rgba(14,165,233,0.45)]"
                 >
                   <span
                     aria-hidden
-                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/15 text-on-primary transition-colors group-hover:bg-white/25 group-disabled:bg-surface-container group-disabled:text-on-surface-variant"
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/18 text-white transition-colors group-hover:bg-white/28 group-disabled:bg-slate-200 group-disabled:text-slate-500"
                   >
                     {stage === "uploading" ? (
                       <span className="h-6 w-6 animate-spin rounded-full border-2 border-on-primary/30 border-t-on-primary" />
@@ -394,7 +208,7 @@ export default function UploadPage() {
                 </button>
               </div>
 
-              <p className="rounded-xl border border-white/70 bg-white/70 px-4 py-3 text-center text-label-sm font-label-sm text-[#64748b]">
+              <p className="rounded-xl border border-slate-200/80 bg-white/88 px-4 py-3 text-center text-label-sm font-label-sm text-[#64748b]">
                 投稿すると、位置情報を含むデータの取り扱いに同意したものとみなされます。
               </p>
             </div>

@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { signIn } from "next-auth/react";
+import { registerAccount } from "@/features/auth/api/authApi";
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
@@ -14,16 +15,11 @@ export default function RegisterPage() {
     setLoading(true);
     setMessage(null);
 
-    const response = await fetch("/api/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const result = (await response.json()) as { error?: string };
+    const result = await registerAccount(email, password);
 
-    if (!response.ok) {
+    if (!result.ok) {
       setLoading(false);
-      setMessage(result.error ?? "登録に失敗しました。");
+      setMessage(result.error);
       return;
     }
 

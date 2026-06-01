@@ -5,7 +5,8 @@ import { BottomNav } from "@/components/Nav/BottomNav";
 import { APP_MAIN_BOTTOM_CLASS, APP_MAIN_TOP_CLASS, TopNav } from "@/components/Nav/TopNav";
 import { GalleryGrid } from "@/components/Gallery/GalleryGrid";
 import type { GalleryPhoto, GallerySpot } from "@/components/Gallery/types";
-import { refreshAllSpotsSnapshot } from "@/lib/spotsBoundsCache";
+import { fetchPhotosBySpots } from "@/features/gallery/api/galleryApi";
+import { useDeleteGalleryPhoto } from "@/features/gallery/hooks/useDeleteGalleryPhoto";
 import { normalizeGalleryRouteId } from "@/lib/galleryRouteId";
 
 const PREFIX = "cluster:spots~";
@@ -19,6 +20,7 @@ export function MergedSpotsGalleryClient({ clusterId }: { clusterId: string }) {
   const [total, setTotal] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [photosLoading, setPhotosLoading] = useState(true);
+  const deleteGalleryPhoto = useDeleteGalleryPhoto({ onError: setError });
 
   const canonicalClusterId = useMemo(() => normalizeGalleryRouteId(clusterId), [clusterId]);
 
@@ -50,18 +52,14 @@ export function MergedSpotsGalleryClient({ clusterId }: { clusterId: string }) {
     setPhotos([]);
     void (async () => {
       try {
-        const res = await fetch(`/api/photos/by-spots?ids=${encodeURIComponent(spotIds.join(","))}`, {
-          cache: "no-store",
-        });
+        const result = await fetchPhotosBySpots(spotIds);
         if (cancelled) return;
-        if (!res.ok) {
-          const t = await res.text();
-          setError(t || "写真の取得に失敗しました。");
+        if ("error" in result) {
+          setError(result.error);
           return;
         }
-        const d = (await res.json()) as { photos?: GalleryPhoto[]; total?: number };
-        setPhotos(d.photos ?? []);
-        setTotal(typeof d.total === "number" ? d.total : null);
+        setPhotos(result.photos);
+        setTotal(result.total);
         setError(null);
       } finally {
         if (!cancelled) setPhotosLoading(false);
@@ -73,21 +71,14 @@ export function MergedSpotsGalleryClient({ clusterId }: { clusterId: string }) {
   }, [spotIds]);
 
   const deletePhoto = async (photoId: string) => {
-    if (!confirm("この写真を削除しますか？（クラウド上の画像も削除されます）")) return;
-    const res = await fetch(`/api/photos/${photoId}`, { method: "DELETE" });
-    if (!res.ok) {
-      await res.text();
-      return;
-    }
+    const ok = await deleteGalleryPhoto(photoId);
+    if (!ok) return;
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
     setTotal((prev) => (typeof prev === "number" ? Math.max(0, prev - 1) : prev));
-    void refreshAllSpotsSnapshot();
   };
 
   const derivedError =
     spotIds.length === 0 ? "まとめ表示のスポットIDが不正です。" : error;
-
-  const galleryHref = `/gallery/${encodeURIComponent(canonicalClusterId)}`;
 
   return (
     <div className="min-h-screen bg-[#f3f4f6] text-[#111827] scheme-light">
@@ -116,7 +107,7 @@ export function MergedSpotsGalleryClient({ clusterId }: { clusterId: string }) {
         />
       </main>
 
-      <BottomNav active="gallery" galleryHref={galleryHref} />
+      <BottomNav active="none" />
     </div>
   );
 }

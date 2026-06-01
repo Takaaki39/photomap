@@ -6,8 +6,7 @@ import {
   mergeTagOptions,
   validateAddCustomTag,
 } from "@/lib/photoTag";
-
-type CustomTag = { id: string; tag: string };
+import { useCustomTags } from "@/features/tags/hooks/useCustomTags";
 
 /**
  * アップロード画面のタグ選択。
@@ -22,30 +21,11 @@ export function UploadTagPicker({
   value: string | null;
   onChange: (next: string | null) => void;
 }) {
-  const [customTags, setCustomTags] = useState<CustomTag[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const { tags: customTags, loaded, error, setError, addTag, removeTag } = useCustomTags();
   const [adding, setAdding] = useState(false);
   const [input, setInput] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/me/tags", { cache: "no-store" });
-        if (!res.ok) return;
-        const d = (await res.json()) as { tags?: CustomTag[] };
-        if (!cancelled) setCustomTags(d.tags ?? []);
-      } finally {
-        if (!cancelled) setLoaded(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (adding) inputRef.current?.focus();
@@ -63,41 +43,26 @@ export function UploadTagPicker({
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/me/tags", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tag: validation.value }),
-      });
-      const payload = (await res.json().catch(() => ({}))) as { tag?: CustomTag; error?: string };
-      if (!res.ok || !payload.tag) {
-        setError(payload.error ?? "タグの追加に失敗しました。");
-        return;
+      const created = await addTag(validation.value);
+      if (created) {
+        onChange(validation.value);
+        setInput("");
+        setAdding(false);
       }
-      setCustomTags((prev) => [...prev, payload.tag as CustomTag]);
-      onChange(validation.value);
-      setInput("");
-      setAdding(false);
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDelete = async (target: CustomTag) => {
-    if (!confirm(`タグ「${target.tag}」を削除します。\nこのタグを付けた写真自体は残ります。`)) return;
-    const res = await fetch(`/api/me/tags/${target.id}`, { method: "DELETE" });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      setError(text || "タグの削除に失敗しました。");
-      return;
-    }
-    setCustomTags((prev) => prev.filter((c) => c.id !== target.id));
-    if (value === target.tag) onChange(null);
+  const handleDelete = async (target: { id: string; tag: string }) => {
+    const ok = await removeTag(target);
+    if (ok && value === target.tag) onChange(null);
   };
 
   return (
-    <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-base shadow-md">
+    <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-base shadow-[0_10px_28px_rgba(15,23,42,0.12)] backdrop-blur-sm">
       <div className="px-2 py-1">
-        <div className="text-label-sm font-label-sm text-primary uppercase">タグ（任意）</div>
+        <div className="text-label-sm font-label-sm uppercase tracking-wide text-sky-700">タグ（任意）</div>
 
         <div className="mt-2 flex flex-wrap gap-2">
           {options.map((opt) => {
@@ -112,8 +77,8 @@ export function UploadTagPicker({
                     "rounded-full border px-3 py-1 text-label-md font-label-md transition-colors " +
                     (opt.custom ? "pr-7 " : "") +
                     (selected
-                      ? "border-[#2563eb] bg-[#2563eb] text-white shadow-sm"
-                      : "border-[#d1d5db] bg-white text-[#374151] hover:bg-[#f3f4f6]")
+                      ? "border-sky-600/20 bg-sky-600 text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")
                   }
                 >
                   {opt.label}
@@ -131,7 +96,7 @@ export function UploadTagPicker({
                       "absolute right-1 top-1/2 -translate-y-1/2 inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] leading-none transition-colors " +
                       (selected
                         ? "bg-white/20 text-white hover:bg-white/35"
-                        : "bg-[#f3f4f6] text-[#6b7280] hover:bg-[#e5e7eb]")
+                        : "bg-slate-100 text-slate-500 hover:bg-slate-200")
                     }
                   >
                     ×
@@ -142,7 +107,7 @@ export function UploadTagPicker({
           })}
 
           {adding ? (
-            <span className="inline-flex items-center gap-1 rounded-full border border-[#d1d5db] bg-white px-2 py-1">
+            <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1">
               <input
                 ref={inputRef}
                 type="text"
@@ -164,14 +129,14 @@ export function UploadTagPicker({
                   }
                 }}
                 placeholder="新しいタグ"
-                className="w-28 border-none bg-transparent px-1 py-0 text-label-md font-label-md text-[#111827] focus:outline-none"
+                className="w-28 border-none bg-transparent px-1 py-0 text-label-md font-label-md text-[#111827] placeholder:text-slate-400 focus:outline-none"
                 aria-label="新しいタグ名"
               />
               <button
                 type="button"
                 disabled={submitting}
                 onClick={() => void handleAdd()}
-                className="rounded-full bg-[#2563eb] px-2 py-0.5 text-xs font-semibold text-white disabled:opacity-60"
+                className="rounded-full bg-sky-600 px-2 py-0.5 text-xs font-semibold text-white disabled:opacity-60"
               >
                 追加
               </button>
@@ -182,7 +147,7 @@ export function UploadTagPicker({
                   setInput("");
                   setError(null);
                 }}
-                className="rounded-full px-1 text-xs text-[#6b7280] hover:text-[#111827]"
+                className="rounded-full px-1 text-xs text-slate-500 hover:text-[#111827]"
                 aria-label="キャンセル"
               >
                 ×
@@ -192,7 +157,7 @@ export function UploadTagPicker({
             <button
               type="button"
               onClick={() => setAdding(true)}
-              className="rounded-full border border-dashed border-[#9ca3af] bg-transparent px-3 py-1 text-label-md font-label-md text-[#374151] hover:bg-[#f3f4f6]"
+              className="rounded-full border border-dashed border-slate-300 bg-transparent px-3 py-1 text-label-md font-label-md text-slate-700 hover:bg-slate-100"
             >
               ＋ タグを追加
             </button>
@@ -204,7 +169,7 @@ export function UploadTagPicker({
             {error}
           </p>
         ) : (
-          <p className="mt-2 px-1 text-label-sm font-label-sm text-outline">
+          <p className="mt-2 px-1 text-label-sm font-label-sm text-[#64748b]">
             {value
               ? "再度タップで解除できます"
               : loaded

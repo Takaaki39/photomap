@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerAuthSession } from "@/lib/auth";
-import { createSupabaseAdminClient } from "@/lib/supabase";
+import { deleteUserTag } from "@/server/services/tagsService";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -21,29 +21,9 @@ export async function DELETE(_: Request, context: RouteContext) {
     return NextResponse.json({ error: "invalid tag id" }, { status: 400 });
   }
 
-  const admin = createSupabaseAdminClient();
-  const { data: existing, error: lookupError } = await admin
-    .from("user_tags")
-    .select("id, user_id")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (lookupError) {
-    return NextResponse.json({ error: lookupError.message }, { status: 500 });
-  }
-  if (!existing) {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
-  }
-  const row = existing as { id: string; user_id: string };
-  if (row.user_id !== session.user.id) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-
-  // 注意: photos.tag は freeform 文字列なので、削除しても既存写真の tag 値はそのまま残る。
-  // 表示側（フィルタ・ピッカー）からは消えるが、地図のスポット集約には残るのが意図的な挙動。
-  const { error } = await admin.from("user_tags").delete().eq("id", id);
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  const result = await deleteUserTag(session.user.id, id);
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
   }
   return NextResponse.json({ ok: true });
 }

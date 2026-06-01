@@ -4,44 +4,22 @@ import { useEffect, useMemo, useState } from "react";
 import AdBanner from "@/components/AdBanner";
 import { BottomNav } from "@/components/Nav/BottomNav";
 import { APP_MAIN_BOTTOM_CLASS, APP_MAIN_TOP_CLASS, TopNav } from "@/components/Nav/TopNav";
-
-type Spot = {
-  id: string;
-  name: string;
-  address: string | null;
-  lat: number | null;
-  lng: number | null;
-};
-
-type SpotPhoto = {
-  id: string;
-  user_id: string;
-  image_url: string | null;
-  storage_url: string | null;
-  is_public: boolean;
-  created_at: string;
-  author_name: string;
-};
+import { fetchSpotDetail, fetchSpotPhotosAll } from "@/features/gallery/api/galleryApi";
+import type { SpotDetail, SpotPhoto } from "@/features/gallery/types";
 
 export function SpotDetailClient({ spotId, currentUserId }: { spotId: string; currentUserId?: string }) {
-  const [spot, setSpot] = useState<Spot | null>(null);
+  const [spot, setSpot] = useState<SpotDetail | null>(null);
   const [photos, setPhotos] = useState<SpotPhoto[]>([]);
   const [lightbox, setLightbox] = useState<SpotPhoto | null>(null);
 
   useEffect(() => {
-    (async () => {
-      const [spotRes, photosRes] = await Promise.all([
-        fetch(`/api/spots/${spotId}`, { cache: "no-store" }),
-        fetch(`/api/spots/${spotId}/photos`, { cache: "no-store" }),
+    void (async () => {
+      const [spotData, photoList] = await Promise.all([
+        fetchSpotDetail(spotId),
+        fetchSpotPhotosAll(spotId),
       ]);
-      if (spotRes.ok) {
-        const d = await spotRes.json();
-        setSpot(d.spot ?? null);
-      }
-      if (photosRes.ok) {
-        const d = await photosRes.json();
-        setPhotos(d.photos ?? []);
-      }
+      setSpot(spotData);
+      setPhotos(photoList);
     })();
   }, [spotId]);
 

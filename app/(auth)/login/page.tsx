@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { signIn } from "next-auth/react";
+import { requestPasswordResetEmail } from "@/features/auth/api/authApi";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -42,12 +43,8 @@ export default function LoginPage() {
       setMessage("パスワードリセットにはメールアドレスの入力が必要です。");
       return;
     }
-    const response = await fetch("/api/auth/reset-password", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    });
-    if (!response.ok) {
+    const result = await requestPasswordResetEmail(email);
+    if (!result.ok) {
       setMessage("パスワードリセットメール送信に失敗しました。");
       return;
     }

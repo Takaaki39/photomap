@@ -5,6 +5,7 @@ import { useState } from "react";
 import { signOut } from "next-auth/react";
 import { BottomNav } from "@/components/Nav/BottomNav";
 import { APP_MAIN_BOTTOM_CLASS, APP_MAIN_TOP_CLASS, TopNav } from "@/components/Nav/TopNav";
+import { deleteMyAccount } from "@/features/profile/api/profileApi";
 import { useTheme } from "@/components/Theme/ThemeProvider";
 
 export default function SettingsPage() {
@@ -13,10 +14,9 @@ export default function SettingsPage() {
 
   const onDeleteAccount = async () => {
     if (!confirm("アカウントを削除します。元に戻せません。")) return;
-    const res = await fetch("/api/me/account", { method: "DELETE" });
-    if (!res.ok) {
-      const d = await res.json();
-      setMessage(d.error ?? "アカウント削除に失敗しました。");
+    const result = await deleteMyAccount();
+    if (!result.ok) {
+      setMessage(result.error);
       return;
     }
     await signOut({ callbackUrl: "/" });

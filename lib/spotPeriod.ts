@@ -4,8 +4,8 @@ import type { SpotMapItem } from "@/lib/spotsBoundsCache";
 export type PeriodKey = "week" | "month" | "3m" | "6m" | "year" | "all";
 
 export const PERIOD_OPTIONS: ReadonlyArray<{ value: PeriodKey; label: string }> = [
-  { value: "week", label: "今週" },
-  { value: "month", label: "今月" },
+  { value: "week", label: "1週間以内" },
+  { value: "month", label: "1か月以内" },
   { value: "3m", label: "3ヶ月" },
   { value: "6m", label: "半年" },
   { value: "year", label: "1年以内" },
@@ -46,8 +46,7 @@ export function writeStoredPeriod(period: PeriodKey): void {
 
 /**
  * 指定期間の開始日時を返す（その時刻以降の写真が「期間内」）。
- * - week / month はカレンダー基準（週は月曜始まり、月はその月の 1 日 00:00）
- * - 3m / 6m / year は「今から N 日前」のローリング（90 / 180 / 365 日）
+ * - week / month / 3m / 6m / year は「今から N 日前」のローリング（7 / 30 / 90 / 180 / 365 日）
  * - all は null
  */
 export function getPeriodSince(period: PeriodKey, now: Date = new Date()): Date | null {
@@ -56,14 +55,14 @@ export function getPeriodSince(period: PeriodKey, now: Date = new Date()): Date 
   switch (period) {
     case "week": {
       const d = new Date(now);
-      const day = d.getDay(); // 0=Sun ... 6=Sat
-      const offsetFromMonday = day === 0 ? 6 : day - 1;
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() - offsetFromMonday);
+      d.setDate(d.getDate() - 7);
       return d;
     }
-    case "month":
-      return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    case "month": {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 30);
+      return d;
+    }
     case "3m": {
       const d = new Date(now);
       d.setDate(d.getDate() - 90);

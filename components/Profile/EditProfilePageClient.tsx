@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { BottomNav } from "@/components/Nav/BottomNav";
 import { APP_MAIN_BOTTOM_CLASS, APP_MAIN_TOP_CLASS, TopNav } from "@/components/Nav/TopNav";
+import { fetchMyProfile, updateMyProfile } from "@/features/profile/api/profileApi";
 
 const BIO_MAX = 200;
 const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
@@ -18,15 +19,6 @@ const fieldClass =
   "w-full rounded-xl border-0 bg-[#f3f4f6] px-4 py-3 text-[15px] leading-snug text-[#111827] outline-none placeholder:text-[#9ca3af] focus:ring-2 focus:ring-[#2563eb]/25";
 const btnPrimary =
   "inline-flex items-center justify-center rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1d4ed8] disabled:opacity-60";
-
-type MeProfile = {
-  display_name: string;
-  username: string | null;
-  bio: string | null;
-  primary_location: string | null;
-  avatar_url: string | null;
-  email: string | null;
-};
 
 export function EditProfilePageClient() {
   const router = useRouter();
@@ -46,21 +38,17 @@ export function EditProfilePageClient() {
   const loadProfile = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const res = await fetch("/api/me/profile", { cache: "no-store" });
-    if (!res.ok) {
+    const p = await fetchMyProfile();
+    if (!p) {
       setError("プロフィールの読み込みに失敗しました。");
       setLoading(false);
       return;
     }
-    const d = (await res.json()) as { profile?: MeProfile };
-    const p = d.profile;
-    if (p) {
-      setFullName(p.display_name ?? "");
-      setUsername(p.username?.replace(/^@/, "") ?? "");
-      setBio(p.bio ?? "");
-      setPrimaryLocation(p.primary_location ?? "");
-      setAvatarPreview(p.avatar_url || AVATAR_FALLBACK);
-    }
+    setFullName(p.display_name ?? "");
+    setUsername(p.username?.replace(/^@/, "") ?? "");
+    setBio(p.bio ?? "");
+    setPrimaryLocation(p.primary_location ?? "");
+    setAvatarPreview(p.avatar_url || AVATAR_FALLBACK);
     setLoading(false);
   }, []);
 
@@ -104,16 +92,15 @@ export function EditProfilePageClient() {
     fd.set("primary_location", primaryLocation.trim());
     if (iconFile) fd.set("icon", iconFile);
 
-    const res = await fetch("/api/me/profile", { method: "PATCH", body: fd });
-    const d = (await res.json()) as { error?: string; avatar_url?: string | null };
+    const result = await updateMyProfile(fd);
     setSaving(false);
 
-    if (!res.ok) {
-      setError(d.error ?? "保存に失敗しました。");
+    if (!result.ok) {
+      setError(result.error);
       return;
     }
 
-    if (d.avatar_url) setAvatarPreview(d.avatar_url);
+    if (result.avatar_url) setAvatarPreview(result.avatar_url);
     setIconFile(null);
     router.push("/profile");
   };

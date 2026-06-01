@@ -6,6 +6,8 @@ import { HomeBottomRightControls } from "@/components/Home/HomeBottomRightContro
 import { HomeBottomSheetIndicator } from "@/components/Home/HomeBottomSheetIndicator";
 import { TopNav } from "@/components/Nav/TopNav";
 import { BottomNav } from "@/components/Nav/BottomNav";
+import { useInitialMapCenter } from "@/features/map/hooks/useInitialMapCenter";
+import { useCustomTags } from "@/features/tags/hooks/useCustomTags";
 import {
   DEFAULT_TAG_FILTER,
   type PhotoTagFilter,
@@ -18,7 +20,6 @@ import {
   readStoredPeriod,
   writeStoredPeriod,
 } from "@/lib/spotPeriod";
-import { readHomeMapView } from "@/lib/homeMapView";
 
 const MapViewClient = dynamic(() => import("@/components/Map/MapViewClient"), {
   ssr: false,
@@ -26,18 +27,12 @@ const MapViewClient = dynamic(() => import("@/components/Map/MapViewClient"), {
 });
 
 export function HomePageClient() {
-  const [bootView] = useState(() => readHomeMapView());
-  const [zoom, setZoom] = useState(bootView?.zoom ?? 11);
+  const { initialCenter, zoom, recenterSignal } = useInitialMapCenter();
+  const { tags: customTags } = useCustomTags();
   const [locateSignal, setLocateSignal] = useState(0);
-  const [initialCenter, setInitialCenter] = useState<{ lat: number; lng: number } | null>(
-    bootView ? { lat: bootView.lat, lng: bootView.lng } : null,
-  );
-  const [recenterSignal, setRecenterSignal] = useState(bootView ? 1 : 0);
   const [period, setPeriod] = useState<PeriodKey>(DEFAULT_PERIOD);
   const [tagFilter, setTagFilter] = useState<PhotoTagFilter>(DEFAULT_TAG_FILTER);
-  const [customTags, setCustomTags] = useState<Array<{ id: string; tag: string }>>([]);
 
-  // マウント後に localStorage から復元（SSR ハイドレーション不整合を避けるため初期値はデフォルト固定）
   useEffect(() => {
     const t = window.setTimeout(() => {
       const storedPeriod = readStoredPeriod();
@@ -46,24 +41,6 @@ export function HomePageClient() {
       if (storedTag) setTagFilter(storedTag);
     }, 0);
     return () => window.clearTimeout(t);
-  }, []);
-
-  // ユーザーのカスタムタグを取得
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/me/tags", { cache: "no-store" });
-        if (!res.ok) return;
-        const d = (await res.json()) as { tags?: Array<{ id: string; tag: string }> };
-        if (!cancelled) setCustomTags(d.tags ?? []);
-      } catch {
-        // ignore
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   const handlePeriodChange = (next: PeriodKey) => {
@@ -75,59 +52,6 @@ export function HomePageClient() {
     setTagFilter(next);
     writeStoredTagFilter(next);
   };
-
-  useEffect(() => {
-    if (bootView) return;
-
-    let cancelled = false;
-
-    const finish = (center: { lat: number; lng: number } | null) => {
-      if (cancelled || !center) return;
-      setInitialCenter(center);
-      setZoom(14);
-      setRecenterSignal((v) => v + 1);
-    };
-
-    if (typeof navigator !== "undefined" && "geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => finish({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        async () => {
-          try {
-            const res = await fetch("https://ipapi.co/json/", { cache: "no-store" });
-            if (!res.ok) return;
-            const d = (await res.json()) as { latitude?: number; longitude?: number };
-            const lat = d.latitude;
-            const lng = d.longitude;
-            if (typeof lat === "number" && typeof lng === "number" && Number.isFinite(lat) && Number.isFinite(lng)) {
-              finish({ lat, lng });
-            }
-          } catch {
-            // ignore
-          }
-        },
-        { enableHighAccuracy: true, timeout: 1800, maximumAge: 60_000 },
-      );
-    } else {
-      void (async () => {
-        try {
-          const res = await fetch("https://ipapi.co/json/", { cache: "no-store" });
-          if (!res.ok) return;
-          const d = (await res.json()) as { latitude?: number; longitude?: number };
-          const lat = d.latitude;
-          const lng = d.longitude;
-          if (typeof lat === "number" && typeof lng === "number" && Number.isFinite(lat) && Number.isFinite(lng)) {
-            finish({ lat, lng });
-          }
-        } catch {
-          // ignore
-        }
-      })();
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bootView]);
 
   return (
     <div className="relative h-svh w-full overflow-hidden text-[#111827] scheme-light">
@@ -155,7 +79,6 @@ export function HomePageClient() {
           />
         </div>
 
-        {/* Controls Bottom-Right */}
         <HomeBottomRightControls
           onLocate={() => setLocateSignal((v) => v + 1)}
         />
@@ -166,4 +89,3 @@ export function HomePageClient() {
     </div>
   );
 }
-

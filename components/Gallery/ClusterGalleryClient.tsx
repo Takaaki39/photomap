@@ -5,7 +5,8 @@ import { BottomNav } from "@/components/Nav/BottomNav";
 import { APP_MAIN_BOTTOM_CLASS, APP_MAIN_TOP_CLASS, TopNav } from "@/components/Nav/TopNav";
 import { GalleryGrid } from "@/components/Gallery/GalleryGrid";
 import type { GalleryPhoto, GallerySpot } from "@/components/Gallery/types";
-import { refreshAllSpotsSnapshot } from "@/lib/spotsBoundsCache";
+import { fetchPhotosInBounds } from "@/features/gallery/api/galleryApi";
+import { useDeleteGalleryPhoto } from "@/features/gallery/hooks/useDeleteGalleryPhoto";
 import { readHomeMapView } from "@/lib/homeMapView";
 
 function cellSizeFromZoom(zoom: number) {
@@ -20,6 +21,7 @@ export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [total, setTotal] = useState<number | null>(null);
   const [photosLoading, setPhotosLoading] = useState(true);
+  const deleteGalleryPhoto = useDeleteGalleryPhoto();
 
   const parsed = useMemo(() => {
     const m = clusterId.match(/^cluster:(-?\d+):(-?\d+)$/);
@@ -69,19 +71,15 @@ export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {
     setPhotos([]);
     void (async () => {
       try {
-        const res = await fetch(`/api/photos/in-bounds?bounds=${encodeURIComponent(bounds)}&limit=100`, {
-          cache: "no-store",
-        });
+        const result = await fetchPhotosInBounds(bounds);
         if (cancelled) return;
-        if (!res.ok) {
-          await res.text();
+        if ("error" in result) {
           setPhotos([]);
           setTotal(null);
           return;
         }
-        const d = (await res.json()) as { photos?: GalleryPhoto[]; total?: number | null };
-        setPhotos(d.photos ?? []);
-        setTotal(typeof d.total === "number" ? d.total : null);
+        setPhotos(result.photos);
+        setTotal(result.total);
       } finally {
         if (!cancelled) setPhotosLoading(false);
       }
@@ -92,15 +90,10 @@ export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {
   }, [clusterId, parsed]);
 
   const deletePhoto = async (photoId: string) => {
-    if (!confirm("この写真を削除しますか？（クラウド上の画像も削除されます）")) return;
-    const res = await fetch(`/api/photos/${photoId}`, { method: "DELETE" });
-    if (!res.ok) {
-      await res.text();
-      return;
-    }
+    const ok = await deleteGalleryPhoto(photoId);
+    if (!ok) return;
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
     setTotal((prev) => (typeof prev === "number" ? Math.max(0, prev - 1) : prev));
-    void refreshAllSpotsSnapshot();
   };
 
   return (
@@ -130,8 +123,7 @@ export function ClusterGalleryClient({ clusterId }: { clusterId: string }) {
         />
       </main>
 
-      <BottomNav active="gallery" galleryHref={`/gallery/${clusterId}`} />
+      <BottomNav active="none" />
     </div>
   );
 }
-

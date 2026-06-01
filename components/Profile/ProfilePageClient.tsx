@@ -1,132 +1,53 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { BottomNav } from "@/components/Nav/BottomNav";
 import { APP_MAIN_TOP_CLASS } from "@/components/Nav/TopNav";
 import { PhotoLightbox } from "@/components/Photo/PhotoLightbox";
 import { ProfilePageTopNav } from "@/components/Profile/ProfilePageTopNav";
-import type { MyPhoto } from "@/components/Me/types";
-import { refreshAllSpotsSnapshot } from "@/lib/spotsBoundsCache";
-
-type MeProfile = {
-  display_name: string;
-  username: string | null;
-  bio: string | null;
-  primary_location: string | null;
-  avatar_url: string | null;
-  email: string | null;
-  member_since: string | null;
-};
-
-type FavoriteSpot = {
-  spotKey: string;
-  name: string;
-  region: string;
-  photos: MyPhoto[];
-  coverUrl: string | null;
-};
+import {
+  buildFavoriteSpots,
+  countPlacesVisited,
+  sortPhotosNewestFirst,
+  spotDescription,
+} from "@/features/profile/lib/profileStats";
+import { useMyPhotos } from "@/features/profile/hooks/useMyPhotos";
+import { useMyProfile } from "@/features/profile/hooks/useMyProfile";
 
 const AVATAR_FALLBACK =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Crect fill='%23dbeafe' width='120' height='120'/%3E%3Ccircle cx='60' cy='44' r='22' fill='%2393c5fd'/%3E%3Cellipse cx='60' cy='98' rx='36' ry='26' fill='%2393c5fd'/%3E%3C/svg%3E";
 
 const SPOT_DOT_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"];
 
-const DEFAULT_BIO =
-  "旅と写真が好き。座標とともに、世界の隠れた魅力を記録しています。";
-
-function spotRegionLabel(name: string, fallback?: string | null) {
-  const parts = name.split(",").map((s) => s.trim()).filter(Boolean);
-  if (parts.length >= 2) return parts[parts.length - 1];
-  return fallback?.trim() || name;
-}
-
-function spotDescription(name: string) {
-  return `${name}周辺で撮影した写真と思い出。`;
-}
-
 export function ProfilePageClient() {
-  const [photos, setPhotos] = useState<MyPhoto[]>([]);
-  const [profile, setProfile] = useState<MeProfile | null>(null);
+  const { profile } = useMyProfile();
+  const {
+    photos,
+    error,
+    removePhoto,
+    removeAllPhotos,
+    bulkDeleting,
+    bulkProgress,
+  } = useMyPhotos();
+
   const [avatarSrc, setAvatarSrc] = useState(AVATAR_FALLBACK);
-  const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"gallery" | "favorites" | "maps">("gallery");
   const [activePhotoId, setActivePhotoId] = useState<string | null>(null);
-  const [bulkDeleting, setBulkDeleting] = useState(false);
-  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
-
-  const fetchPhotos = useCallback(async () => {
-    const res = await fetch("/api/me/photos", { cache: "no-store" });
-    if (!res.ok) {
-      const d = await res.json();
-      setError(d.error ?? "写真の読み込みに失敗しました。");
-      return;
-    }
-    setError(null);
-    const d = await res.json();
-    setPhotos(d.photos ?? []);
-  }, []);
-
-  const fetchProfile = useCallback(async () => {
-    const res = await fetch("/api/me/profile", { cache: "no-store" });
-    if (!res.ok) return;
-    const d = (await res.json()) as { profile?: MeProfile };
-    if (!d.profile) return;
-    setProfile(d.profile);
-    setAvatarSrc(d.profile.avatar_url || AVATAR_FALLBACK);
-  }, []);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void fetchPhotos();
-    void fetchProfile();
-  }, [fetchPhotos, fetchProfile]);
 
   const userName = profile?.display_name ?? "ユーザー";
-  const bioText = profile?.bio?.trim() || DEFAULT_BIO;
+  const bioText = profile?.bio?.trim() ?? "";
   const memberSince = profile?.member_since
     ? new Date(profile.member_since).getFullYear().toString()
     : "—";
 
   const totalPhotos = photos.length;
-  const placesVisited = useMemo(() => {
-    const s = new Set<string>();
-    for (const p of photos) {
-      if (p.spot_id) s.add(p.spot_id);
-      else if (p.spot_name) s.add(p.spot_name);
-    }
-    return s.size;
-  }, [photos]);
-
-  const photosNewestFirst = useMemo(
-    () => [...photos].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
-    [photos],
+  const placesVisited = useMemo(() => countPlacesVisited(photos), [photos]);
+  const photosNewestFirst = useMemo(() => sortPhotosNewestFirst(photos), [photos]);
+  const favoriteSpots = useMemo(
+    () => buildFavoriteSpots(photos, profile),
+    [photos, profile],
   );
-
-  const favoriteSpots = useMemo((): FavoriteSpot[] => {
-    const byKey = new Map<string, MyPhoto[]>();
-    for (const p of photos) {
-      const key = p.spot_id || p.spot_name || "unknown";
-      const list = byKey.get(key) ?? [];
-      list.push(p);
-      byKey.set(key, list);
-    }
-    return [...byKey.entries()]
-      .map(([spotKey, spotPhotos]) => {
-        const sorted = [...spotPhotos].sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-        );
-        const name = sorted[0]?.spot_name || "名称未設定";
-        return {
-          spotKey,
-          name,
-          region: spotRegionLabel(name, profile?.primary_location),
-          photos: sorted,
-          coverUrl: sorted.find((x) => x.image_url)?.image_url ?? null,
-        };
-      })
-      .sort((a, b) => b.photos.length - a.photos.length);
-  }, [photos, profile?.primary_location]);
 
   const activePhoto = useMemo(
     () => photosNewestFirst.find((p) => p.id === activePhotoId) ?? null,
@@ -134,103 +55,51 @@ export function ProfilePageClient() {
   );
 
   const deletePhoto = async (photoId: string) => {
-    if (!confirm("この写真を削除しますか？（クラウド上の画像も削除されます）")) return;
-    const res = await fetch(`/api/photos/${photoId}`, { method: "DELETE" });
-    if (!res.ok) {
-      const text = await res.text();
-      setError(text || "削除に失敗しました。");
-      return;
-    }
-    setPhotos((prev) => prev.filter((p) => p.id !== photoId));
-    if (activePhotoId === photoId) setActivePhotoId(null);
-    void refreshAllSpotsSnapshot();
+    const ok = await removePhoto(photoId);
+    if (ok && activePhotoId === photoId) setActivePhotoId(null);
   };
 
-  /** 仮機能: 自分の全写真を一括削除する */
   const bulkDeleteAll = async () => {
-    if (bulkDeleting) return;
-    const total = photos.length;
-    if (total === 0) return;
-    const ok = confirm(
-      `自分の写真 ${total} 枚をすべて削除します。\n` +
-        "クラウド上の画像も削除され、元に戻せません。\n本当に実行しますか？",
-    );
-    if (!ok) return;
-
-    setBulkDeleting(true);
-    setBulkProgress({ done: 0, total });
-    setError(null);
-
-    const ids = photos.map((p) => p.id);
-    const failures: string[] = [];
-    const CONCURRENCY = 6;
-    let cursor = 0;
-    let done = 0;
-
-    const worker = async () => {
-      while (cursor < ids.length) {
-        const i = cursor;
-        cursor += 1;
-        const id = ids[i] as string;
-        try {
-          const res = await fetch(`/api/photos/${id}`, { method: "DELETE" });
-          if (!res.ok) failures.push(id);
-        } catch {
-          failures.push(id);
-        }
-        done += 1;
-        setBulkProgress({ done, total });
-      }
-    };
-
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, ids.length) }, () => worker()));
-
-    const succeededIds = new Set(ids.filter((id) => !failures.includes(id)));
-    setPhotos((prev) => prev.filter((p) => !succeededIds.has(p.id)));
-    setActivePhotoId(null);
-    setBulkDeleting(false);
-    setBulkProgress(null);
-    if (failures.length > 0) {
-      setError(`${failures.length} 件の削除に失敗しました。再度お試しください。`);
-    }
-    void refreshAllSpotsSnapshot();
+    const ok = await removeAllPhotos();
+    if (ok) setActivePhotoId(null);
   };
 
   const tabClass = (id: typeof tab) =>
     id === tab
-      ? "border-b-2 border-[#2563eb] px-6 py-4 text-[15px] font-medium text-[#2563eb]"
-      : "px-6 py-4 text-[15px] font-medium text-[#6b7280] transition-colors hover:text-[#111827]";
+      ? "rounded-full border border-sky-500/30 bg-sky-500/12 px-4 py-2 text-[14px] font-semibold text-sky-700"
+      : "rounded-full border border-slate-200 bg-white px-4 py-2 text-[14px] font-medium text-[#64748b] transition-colors hover:bg-slate-50 hover:text-[#111827]";
 
   const showRecent = tab === "gallery";
   const showFavorites = tab === "gallery" || tab === "favorites";
   const showMaps = tab === "maps";
 
+  const displayAvatar = profile?.avatar_url || avatarSrc;
+
   return (
-    <div className="min-h-screen bg-[#f7f9ff] text-[#111827] scheme-light">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#f8fbff_0%,#eef4ff_42%,#e9edf6_100%)] text-[#111827] scheme-light">
       <ProfilePageTopNav />
 
       <main
-        className={`mx-auto max-w-7xl ${APP_MAIN_TOP_CLASS} pb-10 max-md:pb-[88px] md:pb-12`}
+        className={`mx-auto max-w-7xl px-4 sm:px-6 md:px-10 ${APP_MAIN_TOP_CLASS} pb-10 max-md:pb-[68px] md:pb-12`}
       >
-        {/* Hero */}
-        <section className="profile-cover px-4 pb-10 pt-8 sm:px-6 md:px-10">
+        <section className="profile-cover mt-2 rounded-3xl border border-slate-200/80 bg-white/85 px-5 pb-8 pt-7 shadow-[0_14px_36px_rgba(15,23,42,0.1)] backdrop-blur-sm sm:px-6 md:px-8">
           <div className="flex flex-col items-center gap-6 md:flex-row md:items-end">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               alt=""
               className="h-32 w-32 shrink-0 rounded-full border-4 border-white object-cover shadow-md md:h-40 md:w-40"
-              src={avatarSrc}
+              src={displayAvatar}
               onError={() => setAvatarSrc(AVATAR_FALLBACK)}
             />
 
             <div className="flex-1 text-center md:text-left">
               <div className="flex flex-col items-center gap-3 md:flex-row md:items-center md:gap-4">
-                <h1 className="text-[28px] font-bold leading-tight text-[#111827] md:text-[32px]">
+                <h1 className="text-[28px] font-bold leading-tight text-[#0f172a] md:text-[32px]">
                   {userName}
                 </h1>
                 <Link
                   href="/profile/edit"
-                  className="inline-flex items-center gap-2 rounded-lg bg-[#e5e7eb] px-4 py-2 text-sm font-medium text-[#374151] transition-colors hover:bg-[#d1d5db]"
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-[#334155] shadow-sm transition-colors hover:bg-slate-50"
                 >
                   <svg
                     width={16}
@@ -249,7 +118,9 @@ export function ProfilePageClient() {
                   プロフィールを編集
                 </Link>
               </div>
-              <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-[#6b7280]">{bioText}</p>
+              {bioText ? (
+                <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-[#475569]">{bioText}</p>
+              ) : null}
             </div>
           </div>
 
@@ -261,10 +132,10 @@ export function ProfilePageClient() {
             ].map((stat) => (
               <div
                 key={stat.label}
-                className="flex flex-col items-center justify-center rounded-xl border border-[#e5e7eb]/60 bg-white px-2 py-3 text-center shadow-[0_1px_3px_rgba(0,0,0,0.06)] sm:px-6 sm:py-6"
+                className="flex flex-col items-center justify-center rounded-2xl border border-slate-200/80 bg-white px-2 py-3 text-center shadow-[0_8px_20px_rgba(15,23,42,0.08)] sm:px-6 sm:py-6"
               >
                 <span className="text-[22px] font-bold leading-none text-[#2563eb] sm:text-[32px]">{stat.value}</span>
-                <span className="mt-1 text-[10px] font-medium text-[#9ca3af] sm:mt-2 sm:text-xs">
+                <span className="mt-1 text-[10px] font-medium text-[#64748b] sm:mt-2 sm:text-xs">
                   {stat.label}
                 </span>
               </div>
@@ -272,8 +143,7 @@ export function ProfilePageClient() {
           </div>
         </section>
 
-        {/* Tabs */}
-        <nav className="flex border-b border-[#e5e7eb] px-4 sm:px-6 md:px-10" aria-label="プロフィールのセクション">
+        <nav className="mt-6 flex flex-wrap gap-2" aria-label="プロフィールのセクション">
           <button type="button" onClick={() => setTab("gallery")} className={tabClass("gallery")}>
             ギャラリー
           </button>
@@ -285,19 +155,19 @@ export function ProfilePageClient() {
           </button>
         </nav>
 
-        <div className="px-4 sm:px-6 md:px-10">
+        <div className="mt-4">
           {error ? (
-            <p className="mt-6 text-sm text-[#dc2626]" role="alert">
+            <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm" role="alert">
               {error}
-            </p>
+            </div>
           ) : null}
 
           {showMaps ? (
-            <section className="py-12 text-center">
-              <p className="text-[15px] text-[#6b7280]">地図で写真のピンを確認できます。</p>
+            <section className="rounded-2xl border border-slate-200/80 bg-white/90 py-12 text-center shadow-[0_10px_28px_rgba(15,23,42,0.08)]">
+              <p className="text-[15px] text-[#64748b]">地図で写真のピンを確認できます。</p>
               <Link
                 href="/"
-                className="mt-4 inline-flex rounded-xl bg-[#2563eb] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#1d4ed8]"
+                className="mt-4 inline-flex rounded-xl bg-sky-600 px-6 py-2.5 text-sm font-semibold text-white shadow-[0_8px_22px_rgba(14,116,144,0.32)] transition-colors hover:bg-sky-700"
               >
                 マップを開く
               </Link>
@@ -305,7 +175,7 @@ export function ProfilePageClient() {
           ) : null}
 
           {showRecent ? (
-            <section className="mb-12 mt-8">
+            <section className="mb-12 mt-8 rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.09)] sm:p-6">
               <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-xl font-bold text-[#111827]">最近の投稿</h2>
                 {photosNewestFirst.length > 0 ? (
@@ -324,7 +194,7 @@ export function ProfilePageClient() {
                 ) : null}
               </div>
               {photosNewestFirst.length === 0 ? (
-                <p className="text-[15px] text-[#6b7280]">まだ写真がありません。</p>
+                <p className="text-[15px] text-[#64748b]">まだ写真がありません。</p>
               ) : (
                 <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                   {photosNewestFirst.slice(0, 24).map((p) => (
@@ -382,10 +252,10 @@ export function ProfilePageClient() {
           ) : null}
 
           {showFavorites ? (
-            <section className="mb-16 mt-8">
+            <section className="mb-16 mt-8 rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.09)] sm:p-6">
               <h2 className="mb-6 text-xl font-bold text-[#111827]">お気に入りの場所</h2>
               {favoriteSpots.length === 0 ? (
-                <p className="text-[15px] text-[#6b7280]">写真をアップロードすると、よく行く場所が表示されます。</p>
+                <p className="text-[15px] text-[#64748b]">写真をアップロードすると、よく行く場所が表示されます。</p>
               ) : (
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                   {favoriteSpots.slice(0, tab === "favorites" ? 20 : 4).map((spot, index) => (
@@ -417,7 +287,7 @@ export function ProfilePageClient() {
                               alt=""
                               width={16}
                               height={16}
-                              className="block brightness-[0.35] hue-rotate-[200deg]"
+                              className="block brightness-[0.35] hue-rotate-200"
                               aria-hidden
                             />
                             {spot.region}

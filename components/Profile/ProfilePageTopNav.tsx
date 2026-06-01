@@ -15,9 +15,6 @@ export function ProfilePageTopNav() {
         <Link href="/" className="app-header__nav-link">
           マップ
         </Link>
-        <Link href="/" className="app-header__nav-link">
-          ギャラリー
-        </Link>
         <Link href="/upload" className="app-header__nav-link">
           アップロード
         </Link>
